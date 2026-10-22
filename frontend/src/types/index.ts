@@ -3,6 +3,7 @@ export interface DeviceStats {
   online: number;
   slow: number;
   offline: number;
+  unknown?: number;
 }
 
 export interface Site {
@@ -41,7 +42,8 @@ export interface Device {
   hostname?: string;
   vendor?: string;
   device_type?: 'switch' | 'router' | 'access_point' | 'camera' | 'storage' | 'server' | 'printer' | 'workstation' | 'unknown';
-  status: 'online' | 'slow' | 'offline';
+  status: 'online' | 'slow' | 'offline' | 'unknown';
+  is_wan?: boolean;
   response_time_ms?: number;
   snmp_status?: 'enabled' | 'disabled' | 'timeout';
   snmp_data?: SnmpData;

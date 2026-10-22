@@ -1,6 +1,7 @@
 import type { FC } from "react";
-import { Building2, Radio, Activity, AlertCircle } from "lucide-react";
+import { Building2, Monitor, HelpCircle } from "lucide-react";
 import type { Site, Device } from "../../types";
+import { isWanDevice, getEffectiveDeviceStatus } from "../../lib/utils";
 import { useI18n } from "../../i18n";
 
 interface OverviewKPIProps {
@@ -11,95 +12,146 @@ interface OverviewKPIProps {
 
 export const OverviewKPI: FC<OverviewKPIProps> = ({ sites, devices, selectedSite }) => {
   const { t } = useI18n();
-  const currentSite = selectedSite !== "ALL" ? sites.find(s => s.site_code === selectedSite) : null;
 
-  const totalAgents = selectedSite === "ALL" ? sites.length : 1;
-  const activeAgents = selectedSite === "ALL" 
-    ? sites.filter(s => s.agent_status === "online").length
-    : (currentSite?.agent_status === "online" ? 1 : 0);
+  // Filter by site if selected
+  const activeSites = selectedSite === "ALL" 
+    ? sites 
+    : sites.filter((s) => s.site_code === selectedSite);
 
-  const totalDevices = devices.length;
-  const onlineDevices = devices.filter(d => d.status === "online").length;
-  const slowDevices = devices.filter(d => d.status === "slow").length;
-  const offlineDevices = devices.filter(d => d.status === "offline").length;
+  // Filter devices belonging to active sites, and SEPARATE WAN from LAN
+  const siteDevices = devices.filter((d) => 
+    selectedSite === "ALL" ? true : d.site_code === selectedSite
+  );
+
+  const lanDevices = siteDevices.filter((d) => !isWanDevice(d));
+
+  // Map site agent status for quick lookup
+  const siteAgentMap = new Map(sites.map((s) => [s.site_code, s.agent_status]));
+
+  // 4 statuses calculation for LAN devices:
+  let onlineDevices = 0;
+  let slowDevices = 0;
+  let offlineDevices = 0;
+  let unknownDevices = 0;
+
+  lanDevices.forEach((dev) => {
+    const agentStatus = siteAgentMap.get(dev.site_code);
+    const eff = getEffectiveDeviceStatus(dev, agentStatus);
+    if (eff === "online") onlineDevices++;
+    else if (eff === "slow") slowDevices++;
+    else if (eff === "offline") offlineDevices++;
+    else unknownDevices++;
+  });
+
+  const totalLan = lanDevices.length;
+  const onlinePercent = totalLan > 0 ? ((onlineDevices / totalLan) * 100).toFixed(1) : "0.0";
+  const slowPercent = totalLan > 0 ? ((slowDevices / totalLan) * 100).toFixed(1) : "0.0";
+  const offlinePercent = totalLan > 0 ? ((offlineDevices / totalLan) * 100).toFixed(1) : "0.0";
+  const unknownPercent = totalLan > 0 ? ((unknownDevices / totalLan) * 100).toFixed(1) : "0.0";
+
+  const totalSites = activeSites.length;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {/* 1. Total Factories */}
-      <div className="rounded-xl border border-border/60 bg-card p-5 text-card-foreground shadow-sm hover:border-border transition-colors">
-        <div className="flex items-center justify-between space-y-0">
-          <span className="text-sm font-medium text-muted-foreground">
-            {t("allFactories")}
-          </span>
-          <Building2 className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="mt-2.5">
-          <div className="text-2xl font-bold tracking-tight text-foreground font-display">
-            {sites.length} <span className="text-sm font-normal text-muted-foreground">Sites</span>
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5">
+      {/* 1. Factories / Site Name */}
+      <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+            <Building2 className="h-5 w-5" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            7 facilities nationwide
-          </p>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold tracking-tight text-white font-display leading-none">
+              {totalSites}
+            </div>
+            <div className="text-xs font-semibold text-slate-300 mt-1 truncate">
+              {selectedSite === "ALL" ? t("cardFactories") : activeSites[0]?.site_name || selectedSite}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 2. Active Site Agents */}
-      <div className="rounded-xl border border-border/60 bg-card p-5 text-card-foreground shadow-sm hover:border-border transition-colors">
-        <div className="flex items-center justify-between space-y-0">
-          <span className="text-sm font-medium text-muted-foreground">
-            {t("siteAgentsActive")}
-          </span>
-          <Radio className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="mt-2.5">
-          <div className="text-2xl font-bold tracking-tight text-foreground font-display flex items-baseline gap-2">
-            <span>{activeAgents}</span>
-            <span className="text-sm font-normal text-muted-foreground">/ {totalAgents}</span>
-            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${activeAgents > 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-secondary text-muted-foreground"}`}>
-              {activeAgents > 0 ? "Online" : "Standby"}
-            </span>
+      {/* 2. Total Devices */}
+      <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-cyan-600/15 border border-cyan-600/30 flex items-center justify-center text-cyan-400 shrink-0">
+            <Monitor className="h-5 w-5" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Real-time telemetry heartbeat
-          </p>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold tracking-tight text-white font-display leading-none">
+              {totalLan}
+            </div>
+            <div className="text-xs font-semibold text-slate-300 mt-1 truncate">
+              {t("cardTotalDevices")}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* 3. Online Devices */}
-      <div className="rounded-xl border border-border/60 bg-card p-5 text-card-foreground shadow-sm hover:border-border transition-colors">
-        <div className="flex items-center justify-between space-y-0">
-          <span className="text-sm font-medium text-muted-foreground">
-            {t("devicesOnline")}
-          </span>
-          <Activity className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="mt-2.5">
-          <div className="text-2xl font-bold tracking-tight text-foreground font-display flex items-baseline gap-2">
-            <span className={onlineDevices > 0 ? "text-emerald-400" : ""}>{onlineDevices}</span>
-            <span className="text-sm font-normal text-muted-foreground">/ {totalDevices} total</span>
+      <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <span className="h-3.5 w-3.5 rounded-full bg-emerald-400 glow-online" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {slowDevices > 0 ? `${slowDevices} high latency (≥100ms)` : "Normal response times"}
-          </p>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold tracking-tight text-emerald-400 font-display leading-none">
+              {onlineDevices}
+            </div>
+            <div className="text-xs font-semibold text-emerald-400 mt-1">{t("cardOnline")}</div>
+            <div className="text-[11px] text-slate-400 truncate mt-0.5">{onlinePercent}%</div>
+          </div>
         </div>
       </div>
 
-      {/* 4. Connection Lost / Alerts */}
-      <div className="rounded-xl border border-border/60 bg-card p-5 text-card-foreground shadow-sm hover:border-border transition-colors">
-        <div className="flex items-center justify-between space-y-0">
-          <span className="text-sm font-medium text-muted-foreground">
-            {t("connectionLost")}
-          </span>
-          <AlertCircle className={`h-4 w-4 ${offlineDevices > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-        </div>
-        <div className="mt-2.5">
-          <div className="text-2xl font-bold tracking-tight text-foreground font-display flex items-baseline gap-2">
-            <span className={offlineDevices > 0 ? "text-destructive font-mono" : ""}>{offlineDevices}</span>
-            <span className="text-sm font-normal text-muted-foreground">Offline</span>
+      {/* 4. Slow Devices */}
+      <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <span className="h-3.5 w-3.5 rounded-full bg-amber-400 glow-warning animate-pulse" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {offlineDevices > 0 ? "Requires IT check" : "Zero packet loss detected"}
-          </p>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold tracking-tight text-amber-400 font-display leading-none">
+              {slowDevices}
+            </div>
+            <div className="text-xs font-semibold text-amber-400 mt-1">{t("cardSlow")}</div>
+            <div className="text-[11px] text-slate-400 truncate mt-0.5">{slowPercent}%</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Confirmed Offline Devices */}
+      <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+            <span className="h-3.5 w-3.5 rounded-full bg-red-500 glow-offline" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold tracking-tight text-red-400 font-display leading-none">
+              {offlineDevices}
+            </div>
+            <div className="text-xs font-semibold text-red-400 mt-1">{t("cardOffline")}</div>
+            <div className="text-[11px] text-slate-400 truncate mt-0.5" title="Chỉ tính khi Agent Online mà thiết bị không phản hồi">
+              {offlinePercent}% ({t("cardOfflineConfirmed")})
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Unknown / Monitor Down (Khi Agent Offline) */}
+      <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+            <HelpCircle className="h-5 w-5 text-purple-400" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold tracking-tight text-purple-300 font-display leading-none">
+              {unknownDevices}
+            </div>
+            <div className="text-xs font-semibold text-purple-300 mt-1">{t("cardUnknown")}</div>
+            <div className="text-[11px] text-purple-400/80 truncate mt-0.5" title="Mất tín hiệu Agent - Monitor Down">
+              {unknownPercent}% ({t("cardUnknownAgentDown")})
+            </div>
+          </div>
         </div>
       </div>
     </div>

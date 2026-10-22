@@ -75,9 +75,9 @@ export const NetworkTopology: FC<NetworkTopologyProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold font-display text-foreground tracking-tight">
+              <h1 className="text-base sm:text-lg font-bold font-display text-foreground tracking-tight">
                 {t("networkTopology")}
-              </h2>
+              </h1>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
                 Interactive
               </span>
@@ -166,7 +166,7 @@ export const NetworkTopology: FC<NetworkTopologyProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-xs sm:text-sm text-foreground">{currentSite?.site_name}</span>
                   <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.2 rounded bg-slate-800">
-                    {currentSite?.code_nm || currentSite?.site_code}
+                    {currentSite?.site_code}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground font-mono">

@@ -63,7 +63,7 @@ export const AlertDrawer: FC<AlertDrawerProps> = ({ isOpen, onClose, alerts }) =
                       <span className="font-mono font-bold uppercase tracking-wider">{alt.site_code}</span>
                     </div>
                     <span className="text-[10px] opacity-75 font-mono">
-                      {new Date(alt.created_at).toLocaleTimeString(language === "en" ? "en-US" : "vi-VN")}
+                      {new Date(alt.created_at).toLocaleTimeString(language === "en" ? "en-US" : "vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}
                     </span>
                   </div>
                   <p className="text-xs text-foreground font-medium leading-relaxed">{alt.message}</p>

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchSites, fetchDevices, fetchAlerts } from "../services/api";
+import { fetchSites, fetchDevices, fetchAlerts, fetchUptimeHistory } from "../services/api";
 import type { Site } from "../types";
 
 const SSE_URL = import.meta.env.VITE_SSE_URL || "http://localhost:8000/api/v1/stream/events";
@@ -29,6 +29,15 @@ export function useAlerts(siteCode?: string) {
     queryFn: () => fetchAlerts(siteCode),
     refetchInterval: 4000,
     staleTime: 2000,
+  });
+}
+
+export function useUptimeHistory(siteCode: string = "ALL", range: string = "24h") {
+  return useQuery({
+    queryKey: ["uptime_history", siteCode, range],
+    queryFn: () => fetchUptimeHistory(siteCode, range),
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 

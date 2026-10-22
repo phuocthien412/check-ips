@@ -37,3 +37,13 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Site Agent local machine runtime data & logs
+site-agent/logs/
+**/logs/
+agent_buffer.db
+server_ip.txt
+latest_summary.txt
+latest_telemetry.json
+pinglist_note.txt
+geojson_list.txt

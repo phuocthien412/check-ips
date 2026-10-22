@@ -130,7 +130,7 @@ export const ProfilePage: FC<ProfilePageProps> = ({
           <div className="text-center sm:text-left flex-1">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-xl font-bold font-display text-foreground">{displayName}</h2>
+                <h1 className="text-xl font-bold font-display text-foreground">{displayName}</h1>
                 <p className="text-xs text-muted-foreground font-mono">admin@sabibeco.com.vn</p>
               </div>
 
@@ -309,7 +309,7 @@ export const ProfilePage: FC<ProfilePageProps> = ({
                 <span className={`h-1.5 w-1.5 rounded-full ${s.agent_status === "online" ? "bg-online" : "bg-destructive"}`} />
                 <span className="truncate">{s.site_name}</span>
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 truncate">{s.code_nm || s.site_code}</p>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 truncate">{s.site_code}</p>
             </div>
           ))}
         </div>

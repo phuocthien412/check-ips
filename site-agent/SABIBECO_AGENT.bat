@@ -17,12 +17,22 @@ if (-not $PSScriptRoot -or $PSScriptRoot -eq "") {
     $PSScriptRoot = (Get-Location).Path
 }
 
-# 1. Initialize Logs Directory and Configuration Files
-$LogDir = Join-Path $PSScriptRoot "logs"
+# 1. Initialize Logs Directory (Default to Desktop\SABIBECO_Logs for easy access without polluting repo)
+$DesktopPath = [Environment]::GetFolderPath("Desktop")
+if ($DesktopPath -and (Test-Path $DesktopPath)) {
+    $LogDir = Join-Path $DesktopPath "SABIBECO_Logs"
+} else {
+    $LogDir = Join-Path $PSScriptRoot "logs"
+}
+
 if (-not (Test-Path $LogDir)) {
     try {
         New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-    } catch {}
+    } catch {
+        # Fallback to local logs folder if Desktop is restricted
+        $LogDir = Join-Path $PSScriptRoot "logs"
+        if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+    }
 }
 
 $PingListFile = Join-Path $PSScriptRoot "pinglist.txt"
@@ -81,15 +91,15 @@ Write-Host "[*] Logs Folder:       $LogDir" -ForegroundColor DarkGray
 Write-Host "[*] Custom Ping List:  $PingListFile" -ForegroundColor DarkGray
 Write-Host ""
 
-# Factory Sites Catalog (Matching SABIBECO_10.ps1: NO HARDCODED SUBNETS!)
+# Factory Sites Catalog (7 Official SABIBECO Production Sites)
 $SiteCatalog = @{
-    "1" = @{ Code="BSG_NINH_THUAN"; Name="BSG Ninh Thuan"; CodeNM="NT-77C9D48E177535414FC805FF" }
-    "2" = @{ Code="BSG_PHU_LY";     Name="BSG Phu Ly";     CodeNM="PL-7BA3DF7289959A03A2ACDF03" }
-    "3" = @{ Code="NM_BINH_DUONG";  Name="NM-Binh Duong";  CodeNM="BD-C3687A972CB91B18CCAD167A" }
-    "4" = @{ Code="NM_DONG_THAP";   Name="NM-Dong Thap";   CodeNM="DT-69EC881899064464BDEE46EA" }
-    "5" = @{ Code="NM_HOANG_QUYNH"; Name="NM-Hoang Quynh"; CodeNM="HQ-D92357730AA423A8E4EB1869" }
-    "6" = @{ Code="SABIBECO_HO";    Name="Sabibeco HO";    CodeNM="HO-79601340F79939ED2FA0B2F5" }
-    "7" = @{ Code="TMDV_BINH_TAY";  Name="TMDV BSG Binh Tay"; CodeNM="BT-62584DFDAF9F80D44D56A915" }
+    "1" = @{ Code="BSG_NINH_THUAN"; Name="BSG Ninh Thuan" }
+    "2" = @{ Code="BSG_PHU_LY";     Name="BSG Phu Ly" }
+    "3" = @{ Code="NM_BINH_DUONG";  Name="NM-Binh Duong" }
+    "4" = @{ Code="NM_DONG_THAP";   Name="NM-Dong Thap" }
+    "5" = @{ Code="NM_HOANG_QUYNH"; Name="NM-Hoang Quynh" }
+    "6" = @{ Code="SABIBECO_HO";    Name="Sabibeco HO" }
+    "7" = @{ Code="TMDV_BINH_TAY";  Name="TMDV BSG Binh Tay" }
 }
 
 # ------------------------------------------------------------------------------
@@ -227,22 +237,22 @@ try { Set-Content -Path $PingNoteFile -Value $noteContent -Encoding UTF8 } catch
 # 3. SELECT FACTORY SITE (Matching SABIBECO_10.ps1: 7 Sites)
 # ------------------------------------------------------------------------------
 Write-Host "Please select which Factory Site this agent is running at:" -ForegroundColor Yellow
-Write-Host "  [1] BSG Ninh Thuan      (CodeNM: NT-77C9D48E177535414FC805FF)"
-Write-Host "  [2] BSG Phu Ly          (CodeNM: PL-7BA3DF7289959A03A2ACDF03)"
-Write-Host "  [3] NM-Binh Duong       (CodeNM: BD-C3687A972CB91B18CCAD167A)"
-Write-Host "  [4] NM-Dong Thap        (CodeNM: DT-69EC881899064464BDEE46EA)"
-Write-Host "  [5] NM-Hoang Quynh      (CodeNM: HQ-D92357730AA423A8E4EB1869)"
-Write-Host "  [6] Sabibeco HO         (CodeNM: HO-79601340F79939ED2FA0B2F5)"
-Write-Host "  [7] TMDV BSG Binh Tay   (CodeNM: BT-62584DFDAF9F80D44D56A915)"
+Write-Host "  [1] BSG Ninh Thuan"
+Write-Host "  [2] BSG Phu Ly"
+Write-Host "  [3] NM-Binh Duong"
+Write-Host "  [4] NM-Dong Thap"
+Write-Host "  [5] NM-Hoang Quynh"
+Write-Host "  [6] Sabibeco HO"
+Write-Host "  [7] TMDV BSG Binh Tay "
 Write-Host ""
 
-$SiteChoice = Read-Host "Enter factory number [1-7, Press ENTER = 3 NM-Binh Duong]"
+$SiteChoice = Read-Host "Enter factory number [1-7]"
 if (-not $SiteChoice -or $SiteChoice.Trim() -eq "") { $SiteChoice = "3" }
 if (-not $SiteCatalog.ContainsKey($SiteChoice)) { $SiteChoice = "3" }
 
 $SelectedSite = $SiteCatalog[$SiteChoice]
 Write-Host ""
-Write-Host "[OK] Selected Site: $($SelectedSite.Name) (CodeNM: $($SelectedSite.CodeNM))" -ForegroundColor Green
+Write-Host "[OK] Selected Site: $($SelectedSite.Name) ($($SelectedSite.Code))" -ForegroundColor Green
 
 # ------------------------------------------------------------------------------
 # 4. CENTRAL SERVER CONFIGURATION (Auto-loads from server_ip.txt, no prompt)
@@ -511,10 +521,9 @@ try {
 
         Write-AgentLog "Cycle #$CycleCount scan completed in $($ScanDuration)ms. Found: $ActiveCount Online ($SlowCount Slow), $OfflineCount Offline." "INFO" Green
 
-        # Construct Telemetry Payload (includes dynamically discovered subnet & CodeNM)
+        # Construct Telemetry Payload
         $Payload = @{
             site_code = $SelectedSite.Code
-            code_nm = $SelectedSite.CodeNM
             agent_version = "1.4.0"
             timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             discovered_subnets = @($DynamicSubnetCIDR)
@@ -533,7 +542,6 @@ try {
             $summaryText = @"
 Timestamp:          $((Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
 Site:               $($SelectedSite.Name) ($($SelectedSite.Code))
-CodeNM:             $($SelectedSite.CodeNM)
 Discovered Subnet:  $DynamicSubnetCIDR
 Mode:               $ModeName
 Duration:           $($ScanDuration) ms
@@ -556,7 +564,7 @@ Total Targets:      $(@($DeviceList).Count)
             Write-AgentLog "Telemetry uploaded to Central Server! ($msg)" "SUCCESS" Cyan
         } catch {
             Write-AgentLog "Cannot reach Central Server ($ServerUrl): $($_.Exception.Message)" "WARNING" Red
-            Write-AgentLog "Telemetry cached in logs\latest_telemetry.json. Will retry next cycle." "INFO" DarkGray
+            Write-AgentLog "Telemetry cached in $LogDir\latest_telemetry.json. Will retry next cycle." "INFO" DarkGray
         }
 
         Write-Host "  -> Next scan in 15 seconds. [Press 'Q' or 'Ctrl+C' to Stop & go Offline]..." -ForegroundColor DarkGray

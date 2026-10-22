@@ -74,6 +74,7 @@ export const Navbar: FC<NavbarProps> = ({
       <div className="flex items-center gap-2.5">
         {/* Language Switcher VN / EN */}
         <button
+          id="language-switcher-btn"
           onClick={() => setLanguage(language === "vi" ? "en" : "vi")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-card border border-border text-xs font-semibold text-foreground hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
           title={language === "vi" ? "Switch to English" : "Chuyển sang Tiếng Việt"}

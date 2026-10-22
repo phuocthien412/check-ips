@@ -227,7 +227,6 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
 
         {/* Dynamic Main Body Content */}
         <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-6 flex-1">
-          <h1 className="sr-only">SABIBECO Network Operations Center - 7-Factory Infrastructure Telemetry</h1>
           {/* VIEW 1: TRANG TỔNG QUAN */}
           {activeView === "dashboard" && (
             <OverviewDashboard
@@ -255,6 +254,8 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
               onStatusFilterChange={setStatusFilter}
               siteName={currentSelectedSite?.site_name}
               siteStatus={currentSelectedSite?.agent_status}
+              location={currentSelectedSite?.location}
+              subnet={currentSelectedSite?.subnet_ranges?.[0]}
             />
           )}
 

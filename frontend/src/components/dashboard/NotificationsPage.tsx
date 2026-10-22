@@ -50,9 +50,9 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
             <div className="h-8 w-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
               <Bell className="h-4 w-4" />
             </div>
-            <h2 className="text-base font-bold font-display text-foreground tracking-tight">
+            <h1 className="text-base font-bold font-display text-foreground tracking-tight">
               {t("notificationsCenter")}
-            </h2>
+            </h1>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
               {t("autoIndex")} ({alerts.length})
             </span>
@@ -195,7 +195,7 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
 
                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                   <span className="font-mono text-[11px] text-muted-foreground">
-                    {new Date(alt.created_at).toLocaleString(language === "en" ? "en-US" : "vi-VN")}
+                    {new Date(alt.created_at).toLocaleString(language === "en" ? "en-US" : "vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}
                   </span>
                   {onDeleteAlert && (
                     <button

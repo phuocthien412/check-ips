@@ -1,7 +1,7 @@
 import type { FC } from "react";
 import { X, Server, Activity, ArrowDown, ArrowUp } from "lucide-react";
 import type { Device } from "../../types";
-import { formatBytes, formatUptime } from "../../lib/utils";
+import { formatBytes, formatUptime, formatVietnamDateTime } from "../../lib/utils";
 import { useI18n } from "../../i18n";
 
 interface DeviceDetailSheetProps {
@@ -10,7 +10,7 @@ interface DeviceDetailSheetProps {
 }
 
 export const DeviceDetailSheet: FC<DeviceDetailSheetProps> = ({ device, onClose }) => {
-  const { language, t } = useI18n();
+  const { t } = useI18n();
   if (!device) return null;
 
   const isOnline = device.status === "online";
@@ -85,14 +85,14 @@ export const DeviceDetailSheet: FC<DeviceDetailSheetProps> = ({ device, onClose 
               </div>
               <div>
                 <span className="text-muted-foreground text-[10px] block font-sans">{t("firstSeen")}</span>
-                <span className="text-muted-foreground text-[11px]">
-                  {device.first_discovered ? new Date(device.first_discovered).toLocaleDateString(language === "en" ? "en-US" : "vi-VN") : "—"}
+                <span className="text-muted-foreground text-[11px] font-mono">
+                  {formatVietnamDateTime(device.first_discovered)}
                 </span>
               </div>
               <div>
                 <span className="text-muted-foreground text-[10px] block font-sans">{t("lastSeen")}</span>
-                <span className="text-muted-foreground text-[11px]">
-                  {device.last_seen ? new Date(device.last_seen).toLocaleTimeString(language === "en" ? "en-US" : "vi-VN") : "—"}
+                <span className="text-muted-foreground text-[11px] font-mono">
+                  {formatVietnamDateTime(device.last_seen)}
                 </span>
               </div>
             </div>

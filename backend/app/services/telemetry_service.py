@@ -76,13 +76,15 @@ async def process_telemetry(payload: TelemetryPayload) -> TelemetryIngestRespons
                 "ip": ip,
                 "status": effective_status,
                 "response_time_ms": item.response_time_ms,
-                "last_seen": now if is_responsive else None,
                 "consecutive_misses": 0 if is_responsive else 1
             },
             "$setOnInsert": {
-                "first_discovered": now
+                "first_discovered": now,
+                "last_seen": now
             }
         }
+        if is_responsive:
+            update_doc["$set"]["last_seen"] = now
         if item.mac:
             update_doc["$set"]["mac"] = item.mac
         if item.hostname:
