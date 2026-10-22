@@ -1,0 +1,23 @@
+{
+  "site_code": "NM_BINH_DUONG",
+  "site_name": "NM-Binh Duong",
+  "server_url": "http://localhost:8000/api/v1/telemetry/ingest",
+  "api_token": "sabibeco-noc-secret-token-2026",
+  "auto_scan_enabled": true,
+  "scan_subnets": [
+    "192.168.40.0/24"
+  ],
+  "custom_ping_ips": [],
+  "scan_interval_seconds": 30,
+  "snmp": {
+    "enabled": true,
+    "community": "public",
+    "version": 2,
+    "timeout": 1.5,
+    "retries": 1
+  },
+  "buffer": {
+    "enabled": true,
+    "max_cached_records": 1000
+  }
+}

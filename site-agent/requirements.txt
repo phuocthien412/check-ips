@@ -1,0 +1,4 @@
+requests>=2.31.0
+pysnmp-lextudio>=6.1.0
+icmplib>=3.0.4
+pyinstaller>=6.5.0
