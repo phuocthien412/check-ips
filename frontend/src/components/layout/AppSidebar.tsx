@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Site, UserSession } from "../../types";
 import { useI18n } from "../../i18n";
+import { getAvatarUrl } from "../../services/api";
 
 interface AppSidebarProps {
   sites: Site[];
@@ -290,7 +291,7 @@ export const AppSidebar: FC<AppSidebarProps> = ({
           >
             <div className="relative shrink-0">
               <img
-                src={userSession?.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80"}
+                src={getAvatarUrl(userSession?.avatarUrl)}
                 alt="Admin Avatar"
                 className="h-8 w-8 rounded-full object-cover border border-blue-400/40 group-hover:ring-2 group-hover:ring-blue-400 transition-all"
               />

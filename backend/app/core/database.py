@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.core.config import settings
+from app.core.security import hash_password
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -14,7 +15,6 @@ db_helper = Database()
 INITIAL_SITES = [
     {
         "site_code": "BSG_NINH_THUAN",
-        "code_nm": "NT-77C9D48E177535414FC805FF",
         "site_name": "BSG Ninh Thuận",
         "location": "Ninh Thuận",
         "subnet_ranges": [],
@@ -25,7 +25,6 @@ INITIAL_SITES = [
     },
     {
         "site_code": "BSG_PHU_LY",
-        "code_nm": "PL-7BA3DF7289959A03A2ACDF03",
         "site_name": "BSG Phủ Lý",
         "location": "Hà Nam",
         "subnet_ranges": [],
@@ -36,7 +35,6 @@ INITIAL_SITES = [
     },
     {
         "site_code": "NM_BINH_DUONG",
-        "code_nm": "BD-C3687A972CB91B18CCAD167A",
         "site_name": "NM-Binh Duong",
         "location": "Bình Dương",
         "subnet_ranges": [],
@@ -47,7 +45,6 @@ INITIAL_SITES = [
     },
     {
         "site_code": "NM_DONG_THAP",
-        "code_nm": "DT-69EC881899064464BDEE46EA",
         "site_name": "NM-Đồng Tháp",
         "location": "Đồng Tháp",
         "subnet_ranges": [],
@@ -58,7 +55,6 @@ INITIAL_SITES = [
     },
     {
         "site_code": "NM_HOANG_QUYNH",
-        "code_nm": "HQ-D92357730AA423A8E4EB1869",
         "site_name": "NM-Hoang Quynh",
         "location": "TP. Hồ Chí Minh",
         "subnet_ranges": [],
@@ -69,7 +65,6 @@ INITIAL_SITES = [
     },
     {
         "site_code": "SABIBECO_HO",
-        "code_nm": "HO-79601340F79939ED2FA0B2F5",
         "site_name": "Sabibeco HO",
         "location": "Trụ sở chính TP.HCM",
         "subnet_ranges": [],
@@ -80,7 +75,6 @@ INITIAL_SITES = [
     },
     {
         "site_code": "TMDV_BINH_TAY",
-        "code_nm": "BT-62584DFDAF9F80D44D56A915",
         "site_name": "TMDV BSG Bình Tây",
         "location": "TP. Hồ Chí Minh",
         "subnet_ranges": [],
@@ -108,6 +102,8 @@ async def connect_to_mongo():
         await init_db_indexes()
         # Seed initial sites
         await seed_sites_if_empty()
+        # Seed default admin user if empty
+        await seed_default_user_if_empty()
     except Exception as e:
         logger.warning("Could not complete MongoDB init (is MongoDB running?): %s", e)
 
@@ -138,6 +134,9 @@ async def init_db_indexes():
 
     # Alerts indexes
     await db.alerts.create_index([("site_code", 1), ("acknowledged", 1), ("created_at", -1)])
+
+    # Users indexes
+    await db.users.create_index("username", unique=True)
     logger.info("MongoDB indexes verified.")
 
 async def seed_sites_if_empty():
@@ -150,6 +149,27 @@ async def seed_sites_if_empty():
         logger.info("Seeding initial 7 factory sites...")
         await db.sites.insert_many(INITIAL_SITES)
         logger.info("Seeded %d sites successfully.", len(INITIAL_SITES))
+
+async def seed_default_user_if_empty():
+    db = db_helper.db
+    if db is None:
+        return
+
+    count = await db.users.count_documents({})
+    if count == 0:
+        logger.info("Seeding default admin user...")
+        default_admin = {
+            "username": "admin",
+            "password": hash_password("sabibeco@2026"),
+            "displayName": "Admin Engineer",
+            "role": "Administrator",
+            "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80",
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        await db.users.insert_one(default_admin)
+        logger.info("Seeded default admin user successfully.")
 
 def get_database() -> AsyncIOMotorDatabase:
     return db_helper.db

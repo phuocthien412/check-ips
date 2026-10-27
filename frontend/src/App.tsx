@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useSites, useDevices, useAlerts, useLiveTelemetry } from "./hooks/useNetworkData";
 import { Navbar } from "./components/layout/Navbar";
@@ -12,7 +12,14 @@ import { DeviceDetailSheet } from "./components/dashboard/DeviceDetailSheet";
 import { AlertDrawer } from "./components/dashboard/AlertDrawer";
 import { AddDeviceModal } from "./components/dashboard/AddDeviceModal";
 import { LoginPage } from "./components/auth/LoginPage";
-import { addPingDevice, deletePingDevice, clearAllAlerts, deleteAlert } from "./services/api";
+import { 
+  addPingDevice, 
+  deletePingDevice, 
+  clearAllAlerts, 
+  deleteAlert, 
+  getCurrentUser, 
+  logoutUser 
+} from "./services/api";
 import { I18nProvider, useI18n } from "./i18n";
 import { useToast } from "./context/ToastContext";
 import type { Device, UserSession } from "./types";
@@ -29,20 +36,33 @@ const queryClient = new QueryClient({
 });
 
 function DashboardContent() {
-  // 1. User Auth Session State with Dedicated Local Storage Cache
-  const [userSession, setUserSession] = useState<UserSession | null>(() => {
-    try {
-      const saved = localStorage.getItem("sabibeco_user_session");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.isLoggedIn) return parsed;
-      }
-    } catch {}
-    return null; // Return null so unauthenticated users see the Login Page
-  });
+  const [userSession, setUserSession] = useState<UserSession | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
 
-  const handleLogout = () => {
-    localStorage.removeItem("sabibeco_user_session");
+  // Authenticate session via backend HttpOnly cookie on initial load / reload
+  useEffect(() => {
+    let isMounted = true;
+    getCurrentUser()
+      .then((session) => {
+        if (isMounted) setUserSession(session);
+      })
+      .catch(() => {
+        if (isMounted) setUserSession(null);
+      })
+      .finally(() => {
+        if (isMounted) setIsAuthLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch {}
+    // Only delete authentication-related keys; preserve language, theme, and user UI preferences
+    localStorage.removeItem("sabibeco_remember_me");
     localStorage.removeItem("sabibeco_active_view");
     localStorage.removeItem("sabibeco_selected_site");
     setUserSession(null);
@@ -51,6 +71,17 @@ function DashboardContent() {
   const handleLoginSuccess = (session: UserSession) => {
     setUserSession(session);
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-[#070A10] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-mono text-muted-foreground animate-pulse">Checking Sabibeco Session...</p>
+        </div>
+      </div>
+    );
+  }
 
   // If not logged in, render the dedicated Login Page directly!
   if (!userSession || !userSession.isLoggedIn) {
@@ -313,19 +344,8 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
           {activeView === "profile" && (
             <ProfilePage
               userSession={userSession}
-              sites={sites}
-              onLogout={onLogout}
-              onUpdateDisplayName={(name) => {
-                const updated = { ...userSession, displayName: name };
-                setUserSession(updated);
-                localStorage.setItem("sabibeco_user_session", JSON.stringify(updated));
-                localStorage.setItem("sabibeco_user_profile", JSON.stringify(updated));
-              }}
-              onUpdateAvatar={(avatarUrl) => {
-                const updated = { ...userSession, avatarUrl };
-                setUserSession(updated);
-                localStorage.setItem("sabibeco_user_session", JSON.stringify(updated));
-                localStorage.setItem("sabibeco_user_profile", JSON.stringify(updated));
+              onUpdateSession={(updatedSession) => {
+                setUserSession(updatedSession);
               }}
             />
           )}

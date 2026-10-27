@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import connect_to_mongo, close_mongo_connection, get_database
 from app.services.watchdog import run_heartbeat_watchdog
@@ -78,6 +80,10 @@ async def health_check():
 
 # Mount v1 routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Ensure uploads directory exists and mount static serving
+os.makedirs(os.path.join(settings.UPLOAD_DIR, "avatars"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 if __name__ == "__main__":
     import uvicorn

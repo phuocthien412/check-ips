@@ -1,20 +1,18 @@
 import { useState } from "react";
-import type { FC, FormEvent } from "react";
+import type { FC, SyntheticEvent } from "react";
 import { 
-  ShieldCheck, 
   Lock, 
   User, 
   AlertCircle, 
   LogIn, 
   Activity, 
   Globe, 
-  CheckCircle2, 
   Eye, 
-  EyeOff, 
-  Sparkles 
+  EyeOff
 } from "lucide-react";
 import type { UserSession } from "../../types";
 import { useI18n } from "../../i18n";
+import { loginUser } from "../../services/api";
 
 interface LoginPageProps {
   onLoginSuccess: (session: UserSession) => void;
@@ -22,74 +20,62 @@ interface LoginPageProps {
 
 export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const { language, setLanguage, t } = useI18n();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("sabibeco@2026");
-  const [rememberMe, setRememberMe] = useState(true);
+  const savedUser = localStorage.getItem("sabibeco_remembered_username") || "";
+  const [username, setUsername] = useState(savedUser);
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(Boolean(savedUser) || localStorage.getItem("sabibeco_remember_me") === "true");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const performLogin = (userToAuth: string, passToAuth: string) => {
+  const performLogin = async (userToAuth: string, passToAuth: string) => {
     setError(null);
 
-    if (!userToAuth.trim() || !passToAuth.trim()) {
+    const cleanUser = userToAuth.trim();
+    if (!cleanUser || !passToAuth) {
       setError(t("missingCredentials"));
-      return;
-    }
-
-    const savedPass = localStorage.getItem("sabibeco_admin_password") || "sabibeco@2026";
-    const isValidPass = 
-      passToAuth.trim() === savedPass || 
-      passToAuth.trim() === "sabibeco@2026" || 
-      passToAuth.trim() === "admin";
-
-    if (!isValidPass) {
-      setError(t("wrongPassword"));
       return;
     }
 
     setLoading(true);
 
-    // Retrieve any custom avatar or display name previously saved
-    let existingProfile: Partial<UserSession> = {};
     try {
-      const raw = localStorage.getItem("sabibeco_user_profile");
-      if (raw) existingProfile = JSON.parse(raw);
-    } catch {}
+      // Authenticate with real backend and MongoDB database
+      // The backend sets a secure HttpOnly cookie (persistent for 14 days, or session-only)
+      const session = await loginUser({ 
+        username: cleanUser, 
+        password: passToAuth, 
+        remember_me: rememberMe 
+      });
 
-    const session: UserSession = {
-      username: userToAuth.trim(),
-      displayName: existingProfile.displayName || "Admin Engineer",
-      role: "Administrator",
-      avatarUrl: existingProfile.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80",
-      isLoggedIn: true,
-    };
+      if (rememberMe) {
+        // Only remember username in localStorage for convenience (NO tokens / passwords stored!)
+        localStorage.setItem("sabibeco_remembered_username", cleanUser);
+        localStorage.setItem("sabibeco_remember_me", "true");
+      } else {
+        // When Remember Me is disabled, clean only auth-related keys, preserving language & theme
+        localStorage.removeItem("sabibeco_remembered_username");
+        localStorage.removeItem("sabibeco_remember_me");
+      }
 
-    // Dedicated cache persistence:
-    // If rememberMe is checked, store in localStorage (survives browser restart and refresh)
-    // Always write to localStorage so refresh works seamlessly as requested
-    localStorage.setItem("sabibeco_user_session", JSON.stringify(session));
-    if (rememberMe) {
-      localStorage.setItem("sabibeco_remember_me", "true");
-    } else {
-      localStorage.removeItem("sabibeco_remember_me");
-    }
-
-    setTimeout(() => {
-      setLoading(false);
       onLoginSuccess(session);
-    }, 350);
+    } catch (err: any) {
+      const msg = err?.message || "";
+      if (msg.includes("Invalid username or password")) {
+        setError(t("wrongPassword"));
+      } else if (msg.includes("deactivated")) {
+        setError(language === "vi" ? "Tài khoản này đã bị vô hiệu hóa." : "This account has been deactivated.");
+      } else {
+        setError(msg || (language === "vi" ? "Không thể kết nối đến máy chủ đăng nhập." : "Could not connect to authentication server."));
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault();
     performLogin(username, password);
-  };
-
-  const handleQuickDemo = () => {
-    setUsername("admin");
-    setPassword("sabibeco@2026");
-    performLogin("admin", "sabibeco@2026");
   };
 
   return (
@@ -145,9 +131,6 @@ export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
           {/* Title Header */}
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-primary/10 border border-primary/30 text-primary mb-3 shadow-md shadow-primary/20">
-              <ShieldCheck className="h-7 w-7 text-primary" />
-            </div>
 
             <div className="inline-block mb-1">
               <span className="text-[10px] font-mono uppercase tracking-widest text-primary font-bold px-2.5 py-0.5 rounded-full bg-primary/10 border border-primary/20">
@@ -185,6 +168,7 @@ export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={t("usernamePlaceholder")}
+                  autoComplete="username"
                   className="w-full bg-slate-900/90 border border-border rounded-xl pl-10 pr-3.5 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-sans text-xs sm:text-sm"
                   required
                   autoFocus
@@ -204,6 +188,7 @@ export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t("passwordPlaceholder")}
+                  autoComplete="current-password"
                   className="w-full bg-slate-900/90 border border-border rounded-xl pl-10 pr-10 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-sans text-xs sm:text-sm font-mono"
                   required
                 />
@@ -246,27 +231,7 @@ export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </>
               )}
             </button>
-
-            {/* Quick Demo Admin Button */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleQuickDemo}
-                className="w-full py-2 px-3 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-muted-foreground hover:text-foreground text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-                <span>{t("quickDemoLogin")}: admin / sabibeco@2026</span>
-              </button>
-            </div>
           </form>
-
-          {/* Security Assurance Tag */}
-          <div className="mt-5 pt-4 border-t border-slate-800/80 text-center">
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
-              <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-              {t("securityEncrypted")}
-            </span>
-          </div>
         </div>
       </main>
 

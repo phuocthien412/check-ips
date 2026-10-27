@@ -10,7 +10,6 @@ class DeviceStats(BaseModel):
 
 class SiteBase(BaseModel):
     site_code: str
-    code_nm: Optional[str] = None
     site_name: str
     location: str
     subnet_ranges: List[str] = []

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { FC, FormEvent } from "react";
+import type { FC, SyntheticEvent } from "react";
 import { PlusCircle, X, Wifi } from "lucide-react";
 import type { Site, Device } from "../../types";
 import { useI18n } from "../../i18n";
@@ -37,7 +37,7 @@ export const AddDeviceModal: FC<AddDeviceModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     setError(null);
 

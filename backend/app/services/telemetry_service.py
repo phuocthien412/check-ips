@@ -162,8 +162,6 @@ async def process_telemetry(payload: TelemetryPayload) -> TelemetryIngestRespons
     }
     if payload.discovered_subnets:
         site_update_fields["subnet_ranges"] = payload.discovered_subnets
-    if payload.code_nm:
-        site_update_fields["code_nm"] = payload.code_nm
 
     await db.sites.update_one(
         {"site_code": site_code},

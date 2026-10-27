@@ -33,7 +33,6 @@ class AgentMetrics(BaseModel):
 
 class TelemetryPayload(BaseModel):
     site_code: str = Field(..., description="Mã định danh duy nhất của site (VD: NM_BINH_DUONG)")
-    code_nm: Optional[str] = None
     agent_version: str = "1.0.0"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     discovered_subnets: Optional[List[str]] = []

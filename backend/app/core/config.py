@@ -1,4 +1,5 @@
 import json
+import os
 from typing import List, Union
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,6 +9,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "sabibeco-noc-secret-token-2026"
     ENVIRONMENT: str = "development"
+
+    # Uploads (Outside frontend code)
+    UPLOAD_DIR: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads")
 
     # MongoDB
     MONGODB_URL: str = "mongodb://localhost:27017"

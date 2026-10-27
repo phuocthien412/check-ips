@@ -244,10 +244,8 @@ export const en: Record<TranslationKey, string> = {
   missingCredentials: "Please enter username and password!",
   wrongPassword: "Incorrect password! Please try again.",
   rememberMe: "Remember my login on this browser",
-  quickDemoLogin: "Quick Login (Demo)",
   securityPortal: "ADMINISTRATOR SECURITY PORTAL",
-  securityEncrypted: "256-bit secure encrypted authentication",
-
+  
   // Common
   subnet: "Subnet",
   totalIp: "Total IPs",

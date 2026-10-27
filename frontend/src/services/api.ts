@@ -1,4 +1,4 @@
-import type { Site, Device, Alert } from "../types";
+import type { Site, Device, Alert, UserSession } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -6,7 +6,6 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api
 export const INITIAL_SITES: Site[] = [
   {
     site_code: "BSG_NINH_THUAN",
-    code_nm: "NT-77C9D48E177535414FC805FF",
     site_name: "BSG Ninh Thuận",
     location: "Ninh Thuận",
     subnet_ranges: [],
@@ -15,7 +14,6 @@ export const INITIAL_SITES: Site[] = [
   },
   {
     site_code: "BSG_PHU_LY",
-    code_nm: "PL-7BA3DF7289959A03A2ACDF03",
     site_name: "BSG Phủ Lý",
     location: "Hà Nam",
     subnet_ranges: [],
@@ -24,7 +22,6 @@ export const INITIAL_SITES: Site[] = [
   },
   {
     site_code: "NM_BINH_DUONG",
-    code_nm: "BD-C3687A972CB91B18CCAD167A",
     site_name: "NM-Binh Duong",
     location: "Bình Dương",
     subnet_ranges: [],
@@ -33,7 +30,6 @@ export const INITIAL_SITES: Site[] = [
   },
   {
     site_code: "NM_DONG_THAP",
-    code_nm: "DT-69EC881899064464BDEE46EA",
     site_name: "NM-Đồng Tháp",
     location: "Đồng Tháp",
     subnet_ranges: [],
@@ -42,7 +38,6 @@ export const INITIAL_SITES: Site[] = [
   },
   {
     site_code: "NM_HOANG_QUYNH",
-    code_nm: "HQ-D92357730AA423A8E4EB1869",
     site_name: "NM-Hoang Quynh",
     location: "TP. Hồ Chí Minh",
     subnet_ranges: [],
@@ -51,7 +46,6 @@ export const INITIAL_SITES: Site[] = [
   },
   {
     site_code: "SABIBECO_HO",
-    code_nm: "HO-79601340F79939ED2FA0B2F5",
     site_name: "Sabibeco HO",
     location: "Trụ sở chính TP.HCM",
     subnet_ranges: [],
@@ -60,7 +54,6 @@ export const INITIAL_SITES: Site[] = [
   },
   {
     site_code: "TMDV_BINH_TAY",
-    code_nm: "BT-62584DFDAF9F80D44D56A915",
     site_name: "TMDV BSG Bình Tây",
     location: "TP. Hồ Chí Minh",
     subnet_ranges: [],
@@ -284,4 +277,146 @@ export async function fetchUptimeHistory(site_code: string = "ALL", range: strin
       data_points: []
     };
   }
+}
+
+export async function loginUser(credentials: { 
+  username: string; 
+  password: string; 
+  remember_me?: boolean; 
+}): Promise<UserSession> {
+  const res = await fetch(`${BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // Enables secure HttpOnly cookie transmission
+    body: JSON.stringify(credentials)
+  });
+
+  if (!res.ok) {
+    let errMessage = "Login failed";
+    try {
+      const errData = await res.json();
+      if (errData.detail) errMessage = errData.detail;
+    } catch {}
+    throw new Error(errMessage);
+  }
+
+  const data = await res.json();
+  return {
+    username: data.username,
+    displayName: data.displayName,
+    role: data.role,
+    avatarUrl: data.avatarUrl,
+    isLoggedIn: true
+  };
+}
+
+export async function getCurrentUser(): Promise<UserSession | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/auth/me`, {
+      method: "GET",
+      credentials: "include"
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      username: data.username,
+      displayName: data.displayName,
+      role: data.role,
+      avatarUrl: data.avatarUrl,
+      isLoggedIn: true
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function logoutUser(): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/auth/logout`, {
+      method: "POST",
+      credentials: "include"
+    });
+  } catch {}
+}
+
+export async function changePasswordApi(data: { username: string; current_password: string; new_password: string }): Promise<void> {
+  const res = await fetch(`${BASE_URL}/auth/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    let errMessage = "Change password failed";
+    try {
+      const errData = await res.json();
+      if (errData.detail) errMessage = errData.detail;
+    } catch {}
+    throw new Error(errMessage);
+  }
+}
+
+export async function updateUserProfileApi(
+  username: string, 
+  data: { displayName?: string; avatarUrl?: string }
+): Promise<UserSession> {
+  const res = await fetch(`${BASE_URL}/auth/users/${encodeURIComponent(username)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data)
+  });
+
+  if (!res.ok) {
+    let errMessage = "Update profile failed";
+    try {
+      const errData = await res.json();
+      if (errData.detail) errMessage = errData.detail;
+    } catch {}
+    throw new Error(errMessage);
+  }
+
+  const updated = await res.json();
+  return {
+    username: updated.username,
+    displayName: updated.displayName,
+    role: updated.role,
+    avatarUrl: updated.avatarUrl,
+    isLoggedIn: true
+  };
+}
+
+export const BACKEND_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
+
+export function getAvatarUrl(url?: string): string {
+  if (!url) return "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80";
+  if (url.startsWith("/uploads/")) {
+    return `${BACKEND_ORIGIN}${url}`;
+  }
+  return url;
+}
+
+export async function uploadAvatarApi(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${BASE_URL}/auth/upload-avatar`, {
+    method: "POST",
+    credentials: "include",
+    body: formData
+  });
+
+  if (!res.ok) {
+    let errMessage = "Upload failed";
+    try {
+      const errData = await res.json();
+      if (errData.detail) errMessage = errData.detail;
+    } catch {}
+    throw new Error(errMessage);
+  }
+
+  const data = await res.json();
+  return data.avatarUrl; // e.g. "/uploads/avatars/avatar_admin_...png"
 }

@@ -44,6 +44,10 @@ pip install -r requirements.txt
 ```powershell
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+```terminal
+python -m uvicorn app.main:app --reload
+```
+
 - ✅ **API Docs (Swagger UI)**: `http://localhost:8000/api/v1/docs`
 - ✅ **Endpoint nhận dữ liệu Agent**: `POST http://localhost:8000/api/v1/telemetry/ingest`
 

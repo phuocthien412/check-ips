@@ -242,9 +242,7 @@ export const vi = {
   missingCredentials: "Vui lòng nhập tài khoản và mật khẩu!",
   wrongPassword: "Mật khẩu không chính xác! Vui lòng thử lại.",
   rememberMe: "Ghi nhớ phiên đăng nhập trên trình duyệt",
-  quickDemoLogin: "Đăng Nhập Nhanh (Demo)",
-  securityPortal: "CỔNG ĐĂNG NHẬP QUẢN TRỊ VIÊN",
-  securityEncrypted: "Hệ thống xác thực mã hóa an toàn 256-bit",
+  securityPortal: "CỔNG ĐĂNG NHẬP",
 
   // Common
   subnet: "Subnet",

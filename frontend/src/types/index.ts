@@ -9,7 +9,6 @@ export interface DeviceStats {
 export interface Site {
   _id?: string;
   site_code: string;
-  code_nm?: string;
   site_name: string;
   location: string;
   subnet_ranges: string[];
@@ -70,4 +69,5 @@ export interface UserSession {
   displayName: string;
   avatarUrl?: string;
   isLoggedIn: boolean;
+  token?: string;
 }
