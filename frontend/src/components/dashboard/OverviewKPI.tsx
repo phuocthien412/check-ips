@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { Building2, Monitor, HelpCircle } from "lucide-react";
+import { Building2, Monitor, RadioOff } from "lucide-react";
 import type { Site, Device } from "../../types";
 import { isWanDevice, getEffectiveDeviceStatus } from "../../lib/utils";
 import { useI18n } from "../../i18n";
@@ -137,18 +137,18 @@ export const OverviewKPI: FC<OverviewKPIProps> = ({ sites, devices, selectedSite
         </div>
       </div>
 
-      {/* 6. Unknown / Monitor Down (Khi Agent Offline) */}
+      {/* 6. Down (Agent Down / Monitor Down) */}
       <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
-            <HelpCircle className="h-5 w-5 text-purple-400" />
+          <div className="h-10 w-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+            <RadioOff className="h-5 w-5 text-rose-400" />
           </div>
           <div className="min-w-0">
-            <div className="text-2xl font-bold tracking-tight text-purple-300 font-display leading-none">
+            <div className="text-2xl font-bold tracking-tight text-rose-400 font-display leading-none">
               {unknownDevices}
             </div>
-            <div className="text-xs font-semibold text-purple-300 mt-1">{t("cardUnknown")}</div>
-            <div className="text-[11px] text-purple-400/80 truncate mt-0.5" title="Mất tín hiệu Agent - Monitor Down">
+            <div className="text-xs font-semibold text-rose-400 mt-1">{t("cardUnknown")}</div>
+            <div className="text-[11px] text-rose-300/80 truncate mt-0.5" title="Mất tín hiệu Agent - Monitor Down">
               {unknownPercent}% ({t("cardUnknownAgentDown")})
             </div>
           </div>

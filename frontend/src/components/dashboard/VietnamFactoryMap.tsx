@@ -68,11 +68,11 @@ const FACTORY_COORDS: FactoryCoord[] = [
     province: "Ninh Thuận",
     x: 411.5,
     y: 506.7,
-    calloutX: 426,
-    calloutY: 492,
+    calloutX: 435,
+    calloutY: 490,
     calloutWidth: 104,
     calloutHeight: 34,
-    lineTargetX: 426,
+    lineTargetX: 435,
     lineTargetY: 506.7,
   },
   {
@@ -81,12 +81,12 @@ const FACTORY_COORDS: FactoryCoord[] = [
     province: "Bình Dương",
     x: 317.7,
     y: 522.9,
-    calloutX: 286,
-    calloutY: 478,
+    calloutX: 310,
+    calloutY: 450,
     calloutWidth: 100,
     calloutHeight: 34,
     lineTargetX: 317.7,
-    lineTargetY: 512,
+    lineTargetY: 484,
   },
   {
     siteCode: "SABIBECO_HO",
@@ -94,12 +94,12 @@ const FACTORY_COORDS: FactoryCoord[] = [
     province: "TP. Hồ Chí Minh",
     x: 319.6,
     y: 539.0,
-    calloutX: 312,
-    calloutY: 560,
+    calloutX: 360,
+    calloutY: 535,
     calloutWidth: 100,
     calloutHeight: 34,
-    lineTargetX: 319.6,
-    lineTargetY: 560,
+    lineTargetX: 360,
+    lineTargetY: 552,
   },
   {
     siteCode: "TMDV_BSG_BINH_TAY",
@@ -107,12 +107,12 @@ const FACTORY_COORDS: FactoryCoord[] = [
     province: "TP. Hồ Chí Minh",
     x: 317.0,
     y: 540.1,
-    calloutX: 198,
-    calloutY: 524,
+    calloutX: 160,
+    calloutY: 485,
     calloutWidth: 114,
     calloutHeight: 34,
-    lineTargetX: 312,
-    lineTargetY: 540.1,
+    lineTargetX: 274,
+    lineTargetY: 502,
   },
   {
     siteCode: "NM_DONG_THAP",
@@ -120,12 +120,12 @@ const FACTORY_COORDS: FactoryCoord[] = [
     province: "Đồng Tháp",
     x: 276.8,
     y: 552.0,
-    calloutX: 182,
-    calloutY: 556,
+    calloutX: 160,
+    calloutY: 550,
     calloutWidth: 102,
     calloutHeight: 34,
-    lineTargetX: 276.8,
-    lineTargetY: 562,
+    lineTargetX: 262,
+    lineTargetY: 567,
   },
 ];
 
@@ -169,9 +169,10 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
 
     const factory = FACTORY_COORDS.find((f) => f.siteCode === selectedSite);
     if (factory) {
-      const targetZoom = 2.4;
-      const targetPanX = (420 - factory.x) * targetZoom;
-      const targetPanY = (340 - factory.y) * targetZoom;
+      // Balanced zoom (1.5x) so factory is centered while neighboring context remains visible
+      const targetZoom = 1.5;
+      const targetPanX = 420 - factory.x * targetZoom;
+      const targetPanY = 340 - factory.y * targetZoom;
       setZoom(targetZoom);
       setPan({ x: targetPanX, y: targetPanY });
     }
@@ -209,27 +210,64 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
     return map;
   }, [sites]);
 
-  // Zoom handlers
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.35, 3.5));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.35, 0.75));
+  // Zoom handlers keeping center (420, 340) in place
+  const handleZoomIn = () => {
+    setZoom((prevZoom) => {
+      const newZoom = Math.min(Number((prevZoom + 0.25).toFixed(2)), 3.0);
+      setPan((prevPan) => ({
+        x: prevPan.x + 420 * (prevZoom - newZoom),
+        y: prevPan.y + 340 * (prevZoom - newZoom),
+      }));
+      return newZoom;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setZoom((prevZoom) => {
+      const newZoom = Math.max(Number((prevZoom - 0.25).toFixed(2)), 0.75);
+      setPan((prevPan) => ({
+        x: prevPan.x + 420 * (prevZoom - newZoom),
+        y: prevPan.y + 340 * (prevZoom - newZoom),
+      }));
+      return newZoom;
+    });
+  };
+
   const handleReset = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   };
 
-  // Mouse pan handlers
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const zoomDelta = e.deltaY < 0 ? 0.15 : -0.15;
+    setZoom((prevZoom) => {
+      const newZoom = Math.min(Math.max(0.75, Number((prevZoom + zoomDelta).toFixed(2))), 3.0);
+      setPan((prevPan) => ({
+        x: prevPan.x + 420 * (prevZoom - newZoom),
+        y: prevPan.y + 340 * (prevZoom - newZoom),
+      }));
+      return newZoom;
+    });
+  };
+
+  // Mouse pan handlers with smooth relative delta
   const handleMouseDown = (e: MouseEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     setIsDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    setDragStart({ x: e.clientX, y: e.clientY });
   };
 
   const handleMouseMove = (e: MouseEvent<SVGSVGElement>) => {
     if (!isDragging) return;
-    setPan({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y,
-    });
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setPan((p) => ({
+      x: p.x + dx,
+      y: p.y + dy,
+    }));
   };
 
   const handleMouseUp = () => setIsDragging(false);
@@ -239,24 +277,37 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
     if (onHoverSite) onHoverSite(siteCode);
   };
 
+  const isSelectedSite = (siteCode: string) => Boolean(selectedSite && selectedSite !== "ALL" && selectedSite === siteCode);
+
+  // Sort markers so highlighted/selected card renders last (on top of others)
+  const sortedFactoryCoords = useMemo(() => {
+    return [...FACTORY_COORDS].sort((a, b) => {
+      const aHighlighted = activeHoverSite === a.siteCode || isSelectedSite(a.siteCode);
+      const bHighlighted = activeHoverSite === b.siteCode || isSelectedSite(b.siteCode);
+      if (aHighlighted && !bHighlighted) return 1;
+      if (!aHighlighted && bHighlighted) return -1;
+      return 0;
+    });
+  }, [activeHoverSite, selectedSite]);
+
   return (
-    <div className="relative w-full h-[580px] bg-[#070E1A] rounded-2xl border border-slate-800/90 shadow-2xl overflow-hidden select-none flex flex-col">
+    <div className="relative w-full h-full bg-[#070E1A] rounded-2xl border border-slate-800/90 shadow-2xl overflow-hidden select-none flex flex-col">
       {/* Map Header Overlay */}
-      <div className="absolute top-4 left-4 z-20 flex items-center justify-between pointer-events-none w-[calc(100%-2rem)]">
-        <div className="flex items-center gap-3 bg-[#0B1322]/85 backdrop-blur-md px-3.5 py-2 rounded-xl border border-slate-700/60 shadow-lg pointer-events-auto">
+      <div className="absolute top-3.5 left-3.5 z-20 flex items-center justify-between pointer-events-none w-[calc(100%-1.75rem)]">
+        <div className="flex items-center gap-3 bg-[#0B1322]/85 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-700/60 shadow-lg pointer-events-auto">
           <div className="h-8 w-8 rounded-lg bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
             <MapPin className="h-4 w-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-sm text-white font-display tracking-tight">
+              <h3 className="font-semibold text-sm text-white font-display tracking-tight leading-none">
                 {t("mapTitle")}
               </h3>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                 7 Sites
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-sans">
+            <p className="text-[11px] text-slate-400 font-sans mt-0.5">
               {t("mapSubtitle")}
             </p>
           </div>
@@ -305,6 +356,7 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
         >
           <defs>
             {/* Deep Water Radial Gradient */}
@@ -347,8 +399,7 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
           <g 
             transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`} 
             style={{ 
-              transformOrigin: "420px 340px", 
-              transition: isDragging ? "none" : "transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)" 
+              transition: isDragging ? "none" : "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)" 
             }}
           >
             {/* 1. Surrounding Countries Layer (China, Laos, Cambodia, Thailand) */}
@@ -418,10 +469,13 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
 
             {/* 4. Factory Pins & Callout Cards */}
             <g id="factoryMarkers">
-              {FACTORY_COORDS.map((f) => {
+              {sortedFactoryCoords.map((f) => {
                 const siteInfo = siteStatusMap.get(f.siteCode);
                 const isOnline = siteInfo?.status === "online";
-                const isHovered = activeHoverSite === f.siteCode;
+                const isSelected = isSelectedSite(f.siteCode);
+                const isDirectlyHovered = activeHoverSite === f.siteCode;
+                // Keep hover state for selected site unless user is hovering another site
+                const isHighlighted = isDirectlyHovered || (isSelected && !activeHoverSite) || (isSelected && isDirectlyHovered);
 
                 const color = isOnline ? "#10b981" : "#ef4444";
                 const glowFilter = isOnline ? "url(#nodeGlowOnline)" : "url(#nodeGlowOffline)";
@@ -438,28 +492,28 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
                     <circle
                       cx={f.x}
                       cy={f.y}
-                      r={isHovered ? "14" : "10"}
+                      r={isHighlighted ? "15" : "10"}
                       fill={color}
-                      fillOpacity="0.18"
+                      fillOpacity={isHighlighted ? "0.35" : "0.18"}
                       className="animate-ping"
-                      style={{ transformOrigin: `${f.x}px ${f.y}px`, animationDuration: "2.2s" }}
+                      style={{ transformOrigin: `${f.x}px ${f.y}px`, animationDuration: isHighlighted ? "1.6s" : "2.2s" }}
                     />
 
                     {/* Outer ring */}
                     <circle
                       cx={f.x}
                       cy={f.y}
-                      r={isHovered ? "7" : "5.5"}
+                      r={isHighlighted ? "8" : "5.5"}
                       fill="#0B1322"
-                      stroke={color}
-                      strokeWidth="2"
+                      stroke={isHighlighted ? "#38bdf8" : color}
+                      strokeWidth={isHighlighted ? "2.5" : "2"}
                     />
 
                     {/* Core node */}
                     <circle
                       cx={f.x}
                       cy={f.y}
-                      r="3.2"
+                      r={isHighlighted ? "3.8" : "3.2"}
                       fill={color}
                       filter={glowFilter}
                     />
@@ -470,9 +524,9 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
                       y1={f.y}
                       x2={f.lineTargetX ?? f.calloutX}
                       y2={f.lineTargetY ?? f.calloutY + f.calloutHeight / 2}
-                      stroke={isHovered ? "#38bdf8" : "#334155"}
-                      strokeWidth="1"
-                      strokeDasharray="2,2"
+                      stroke={isHighlighted ? "#38bdf8" : "#334155"}
+                      strokeWidth={isHighlighted ? "1.6" : "1"}
+                      strokeDasharray={isHighlighted ? "none" : "2,2"}
                     />
 
                     {/* Callout Card Box */}
@@ -485,10 +539,10 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
                         height={f.calloutHeight}
                         rx="7"
                         fill="#0B1322"
-                        fillOpacity="0.92"
-                        stroke={isHovered ? "#38bdf8" : isOnline ? "#1e293b" : "#7f1d1d"}
-                        strokeWidth={isHovered ? "1.4" : "1"}
-                        className="shadow-xl"
+                        fillOpacity="0.95"
+                        stroke={isHighlighted ? "#38bdf8" : isOnline ? "#1e293b" : "#7f1d1d"}
+                        strokeWidth={isHighlighted ? "2" : "1"}
+                        className={isHighlighted ? "shadow-2xl shadow-cyan-500/30" : "shadow-xl"}
                       />
 
                       {/* Status indicator dot */}
@@ -515,9 +569,10 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
                       <text
                         x="18"
                         y="26"
-                        fill="#94a3b8"
+                        fill={isHighlighted ? "#e2e8f0" : "#94a3b8"}
                         fontSize="7.5"
                         fontFamily="sans-serif"
+                        fontWeight={isHighlighted ? "600" : "400"}
                       >
                         {f.province} • {isOnline ? "Online" : "Offline"}
                       </text>
@@ -531,8 +586,8 @@ export const VietnamFactoryMap: FC<VietnamFactoryMapProps> = ({
       )}
 
       {/* Map Legend Overlay Footer */}
-      <div className="absolute bottom-3.5 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300 pointer-events-none">
-        <div className="flex items-center gap-4 bg-[#0B1322]/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-700/60 shadow-lg pointer-events-auto">
+      <div className="absolute bottom-3 left-3.5 right-3.5 z-20 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300 pointer-events-none">
+        <div className="flex items-center gap-3.5 bg-[#0B1322]/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-700/60 shadow-lg pointer-events-auto">
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[11px] font-medium text-slate-200">{t("legendAgentOnline")}</span>

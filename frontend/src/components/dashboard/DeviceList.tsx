@@ -131,10 +131,11 @@ export const DeviceList: FC<DeviceListProps> = ({
           </span>
         );
       case "unknown":
+      case "down":
         return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-purple-500/10 text-purple-300 border border-purple-500/30" title="Monitor Down">
-            <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-            {t("filterUnknown")}
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-rose-500/10 text-rose-400 border border-rose-500/30" title="Script tắt bất ngờ do mất điện / Mất Agent">
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+            Down
           </span>
         );
       case "offline":

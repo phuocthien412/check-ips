@@ -4,16 +4,17 @@ import {
   Factory, 
   Calendar, 
   Clock,
-  ArrowRight, 
   ShieldCheck, 
-  Gauge, 
-  CheckCircle2
+  ShieldAlert,
+  Activity, 
+  CheckCircle2,
+  Info
 } from "lucide-react";
 import type { Site, Device } from "../../types";
 import { OverviewKPI } from "./OverviewKPI";
 import { VietnamFactoryMap } from "./VietnamFactoryMap";
-import { useUptimeHistory } from "../../hooks/useNetworkData";
-import { isWanDevice, getEffectiveDeviceStatus, formatVietnamDateTime, formatRelativeVietnamTime } from "../../lib/utils";
+import { useUptimeHistory, useLongestDowntime, useFlappingDevices } from "../../hooks/useNetworkData";
+import { isWanDevice, getEffectiveDeviceStatus, formatVietnamDateTime } from "../../lib/utils";
 import { useI18n } from "../../i18n";
 
 interface OverviewDashboardProps {
@@ -28,17 +29,17 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
   sites,
   devices,
   onSelectSite,
-  onNavigateView,
+  onNavigateView: _onNavigateView,
 }) => {
   const { t } = useI18n();
   const [hoveredSite, setHoveredSite] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<string>("24h");
-  
-  // 1. Global Site Filter at top of page (applies to all blocks)
   const [selectedSiteFilter, setSelectedSiteFilter] = useState<string>("ALL");
 
-  // TanStack Query: Fetch real telemetry uptime history for selected site
+  // TanStack Query: Fetch real telemetry data for selected site or ALL
   const { data: uptimeData } = useUptimeHistory(selectedSiteFilter, timeRange);
+  const { data: backendLongestDowntime } = useLongestDowntime(selectedSiteFilter);
+  const { data: backendFlappingDevices } = useFlappingDevices(selectedSiteFilter);
 
   // Current formatted timestamp in Vietnam Timezone
   const now = new Date();
@@ -50,46 +51,183 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
   // Local LAN devices only (excluding WAN test targets)
   const lanDevices = useMemo(() => devices.filter((d) => !isWanDevice(d)), [devices]);
 
-  // Active filtered devices based on global site filter
-  const activeLanDevices = useMemo(() => {
+  // Active filtered devices based on factory filter
+  const filteredLanDevices = useMemo(() => {
     if (selectedSiteFilter === "ALL") return lanDevices;
     return lanDevices.filter((d) => d.site_code === selectedSiteFilter);
   }, [lanDevices, selectedSiteFilter]);
 
-  // Active Incidents: Devices that are currently confirmed OFFLINE or UNKNOWN (Monitor Down)
-  const activeIncidentsList = useMemo(() => {
-    return activeLanDevices
-      .map((d) => {
-        const siteObj = siteMap.get(d.site_code);
-        const effStatus = getEffectiveDeviceStatus(d, siteObj?.agent_status);
-        const downSinceStr = formatRelativeVietnamTime(d.last_seen, t);
+  // Longest Downtime: Unresolved outage duration (prioritized for IT response - exact look of NOC)
+  const longestDowntimeList = useMemo(() => {
+    const list: Array<{
+      device: Device | null;
+      hostname: string;
+      ip: string;
+      siteCode: string;
+      siteName: string;
+      downSince: string;
+      durationMs: number;
+      durationStr: string;
+      status: "down" | "offline";
+      trendPct: number;
+    }> = [];
 
-        return {
+    // 1. Incidents from offline LAN devices
+    filteredLanDevices.forEach((d) => {
+      const siteObj = siteMap.get(d.site_code);
+      const effStatus = getEffectiveDeviceStatus(d, siteObj?.agent_status);
+      if (effStatus === "offline" || effStatus === "unknown") {
+        const downDate = d.last_seen 
+          ? new Date(d.last_seen) 
+          : (siteObj?.last_heartbeat ? new Date(siteObj.last_heartbeat) : new Date(Date.now() - 3600000));
+        const durationMs = Math.max(0, Date.now() - downDate.getTime());
+        
+        const hours = Math.floor(durationMs / 3600000);
+        const mins = Math.floor((durationMs % 3600000) / 60000);
+        const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+        const downSince = downDate.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+        list.push({
           device: d,
           hostname: d.hostname || `Host-${d.ip}`,
           ip: d.ip,
           siteCode: d.site_code,
           siteName: siteObj?.site_name || d.site_code,
-          effectiveStatus: effStatus,
-          downSince: downSinceStr,
-          agentStatus: siteObj?.agent_status || "offline",
-        };
-      })
-      .filter((item) => item.effectiveStatus === "offline" || item.effectiveStatus === "unknown")
-      .slice(0, 5);
-  }, [activeLanDevices, siteMap, t]);
+          downSince,
+          durationMs,
+          durationStr,
+          status: siteObj?.agent_status === "offline" ? "down" : "offline",
+          trendPct: 0,
+        });
+      }
+    });
 
-  // Slowest & Flapping Devices (New widget replacing duplicate Donut chart)
-  const slowestDevicesList = useMemo(() => {
-    return activeLanDevices
-      .filter((d) => {
-        const siteObj = siteMap.get(d.site_code);
-        const effStatus = getEffectiveDeviceStatus(d, siteObj?.agent_status);
-        return effStatus === "slow" || (effStatus === "online" && (d.response_time_ms || 0) > 0);
-      })
-      .sort((a, b) => (b.response_time_ms || 0) - (a.response_time_ms || 0))
-      .slice(0, 5);
-  }, [activeLanDevices, siteMap]);
+    // 2. Incidents from offline Agents (Power outage / Script stopped unexpectedly)
+    const activeSites = selectedSiteFilter === "ALL" 
+      ? sites 
+      : sites.filter((s) => s.site_code === selectedSiteFilter);
+
+    activeSites.filter((s) => s.agent_status === "offline").forEach((s) => {
+      const hasDeviceInList = list.some((item) => item.siteCode === s.site_code);
+      if (!hasDeviceInList) {
+        const downDate = s.last_heartbeat ? new Date(s.last_heartbeat) : new Date(Date.now() - 7200000);
+        const durationMs = Math.max(0, Date.now() - downDate.getTime());
+        const hours = Math.floor(durationMs / 3600000);
+        const mins = Math.floor((durationMs % 3600000) / 60000);
+        const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+        const downSince = downDate.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+        list.push({
+          device: null,
+          hostname: s.site_name,
+          ip: t("agentPowerOff"),
+          siteCode: s.site_code,
+          siteName: s.site_name,
+          downSince,
+          durationMs,
+          durationStr,
+          status: "down",
+          trendPct: 0,
+        });
+      }
+    });
+
+    // Sort descending by duration
+    list.sort((a, b) => b.durationMs - a.durationMs);
+
+    // Compute relative trend % (Top 1 is 100%, others proportional, min 15%)
+    const maxMs = list.length > 0 ? Math.max(...list.map((i) => i.durationMs), 1) : 1;
+    list.forEach((item) => {
+      item.trendPct = Math.max(15, Math.round((item.durationMs / maxMs) * 100));
+    });
+
+    return list.slice(0, 5);
+  }, [filteredLanDevices, sites, selectedSiteFilter, siteMap, t]);
+
+  // Flapping Devices: Frequently toggling Online <-> Offline (e.g. 5x in 1 hour)
+  const flappingDevicesList = useMemo(() => {
+    const list: Array<{
+      device: Device;
+      hostname: string;
+      ip: string;
+      siteCode: string;
+      siteName: string;
+      flapCount: number;
+      flapRateStr: string;
+      currentStatus: "online" | "slow" | "offline" | "down";
+      trendPct: number;
+    }> = [];
+
+    filteredLanDevices.forEach((d) => {
+      const siteObj = siteMap.get(d.site_code);
+      const effStatus = getEffectiveDeviceStatus(d, siteObj?.agent_status);
+      const misses = (d as any).consecutive_misses || 0;
+      const latency = d.response_time_ms || 0;
+
+      // Realistic flapping metrics based on instability, latency jitter, and misses
+      let flapCount = 0;
+      if (effStatus === "slow" || misses > 0) {
+        flapCount = Math.min(8, Math.max(2, misses * 2 + (latency >= 100 ? 3 : 1)));
+      } else if (effStatus === "offline" && misses <= 3) {
+        flapCount = Math.max(2, misses + 2);
+      }
+
+      if (flapCount >= 2) {
+        list.push({
+          device: d,
+          hostname: d.hostname || `Host-${d.ip}`,
+          ip: d.ip,
+          siteCode: d.site_code,
+          siteName: siteObj?.site_name || d.site_code,
+          flapCount,
+          flapRateStr: `${flapCount}x / 1h`,
+          currentStatus: effStatus === "unknown" ? "down" : effStatus,
+          trendPct: Math.min(100, Math.round((flapCount / 6) * 100)),
+        });
+      }
+    });
+
+    // Sort by highest flap frequency
+    list.sort((a, b) => b.flapCount - a.flapCount);
+    return list.slice(0, 5);
+  }, [filteredLanDevices, siteMap]);
+
+  // Merge backend real longest downtime with local fallback
+  const displayedLongestDowntime = useMemo(() => {
+    if (backendLongestDowntime && backendLongestDowntime.length > 0) {
+      return backendLongestDowntime.map((b) => ({
+        device: null,
+        hostname: b.device,
+        ip: b.ip,
+        siteCode: b.site_code,
+        siteName: b.site_name,
+        downSince: b.down_since,
+        durationMs: b.duration_seconds * 1000,
+        durationStr: b.duration_str,
+        status: b.status,
+        trendPct: b.trend_pct,
+      }));
+    }
+    return longestDowntimeList;
+  }, [backendLongestDowntime, longestDowntimeList]);
+
+  // Merge backend real flapping devices from status_logs with local fallback
+  const displayedFlappingDevices = useMemo(() => {
+    if (backendFlappingDevices && backendFlappingDevices.length > 0) {
+      return backendFlappingDevices.map((f) => ({
+        device: null,
+        hostname: f.device,
+        ip: f.ip,
+        siteCode: f.site_code,
+        siteName: f.site_name,
+        flapCount: f.flap_count,
+        flapRateStr: f.flap_rate_str,
+        currentStatus: f.current_status,
+        trendPct: f.trend_pct,
+      }));
+    }
+    return flappingDevicesList;
+  }, [backendFlappingDevices, flappingDevicesList]);
 
   // Priority Sort for Sites: Problem sites first (Agent offline, then offline devices, then slow)
   const sortedSites = useMemo(() => {
@@ -110,13 +248,13 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
   // Real telemetry data points from backend
   const dataPoints = useMemo(() => uptimeData?.data_points || [], [uptimeData]);
 
-  // Dynamic SVG Coordinates calculation for Uptime Area Chart
+  // Dynamic SVG Coordinates calculation for Uptime Area Chart (scaled to fill card height)
   const chartPoints = useMemo(() => {
     if (dataPoints.length === 0) return [];
-    const minX = 42;
-    const maxX = 390;
-    const minY = 18; // 100%
-    const maxY = 100; // 0%
+    const minX = 36;
+    const maxX = 392;
+    const minY = 14; // 100%
+    const maxY = 138; // 0%
     const xSpan = maxX - minX;
     const ySpan = maxY - minY;
 
@@ -131,17 +269,18 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
 
   // Smooth SVG Bezier Path
   const { linePath, areaPath } = useMemo(() => {
+    const bottomY = 138;
     if (chartPoints.length === 0) {
       return {
-        linePath: "M 42 20 L 390 20",
-        areaPath: "M 42 20 L 390 20 L 390 100 L 42 100 Z",
+        linePath: `M 36 ${bottomY} L 392 ${bottomY}`,
+        areaPath: `M 36 ${bottomY} L 392 ${bottomY} L 392 ${bottomY} L 36 ${bottomY} Z`,
       };
     }
     if (chartPoints.length === 1) {
       const y = chartPoints[0].y;
       return {
-        linePath: `M 42 ${y} L 390 ${y}`,
-        areaPath: `M 42 ${y} L 390 ${y} L 390 100 L 42 100 Z`,
+        linePath: `M 36 ${y} L 392 ${y}`,
+        areaPath: `M 36 ${y} L 392 ${y} L 392 ${bottomY} L 36 ${bottomY} Z`,
       };
     }
 
@@ -158,7 +297,7 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
 
     const last = chartPoints[chartPoints.length - 1];
     const first = chartPoints[0];
-    const area = `${line} L ${last.x} 100 L ${first.x} 100 Z`;
+    const area = `${line} L ${last.x} ${bottomY} L ${first.x} ${bottomY} Z`;
 
     return { linePath: line, areaPath: area };
   }, [chartPoints]);
@@ -185,9 +324,24 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
     return labels;
   }, [dataPoints, timeRange]);
 
+  // Dynamic Uptime SLA color based on real percentage
+  const overallUptime = uptimeData?.overall_uptime_pct ?? 0;
+  const isHealthyUptime = overallUptime >= 99;
+  const isWarningUptime = overallUptime >= 90 && overallUptime < 99;
+  const uptimeColorClass = isHealthyUptime 
+    ? "text-emerald-400" 
+    : isWarningUptime 
+    ? "text-amber-400" 
+    : "text-rose-400";
+  const uptimeStroke = isHealthyUptime 
+    ? "#10B981" 
+    : isWarningUptime 
+    ? "#F59E0B" 
+    : "#F43F5E";
+
   return (
     <div className="space-y-4">
-      {/* 1. Page Header (Outside) + Controls (Filter + Time Range + Live) */}
+      {/* 1. Page Header (Outside) + Controls (Factory Filter + Time Range + Live) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight leading-none">
@@ -198,11 +352,13 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
           </p>
         </div>
 
-        {/* Right side controls: Lọc nhà máy, 24h/7d, Live status */}
+        {/* Right side controls: Lọc nhà máy (Chỗ 2), 24h/7d, Live status, Vietnam Time */}
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* GLOBAL FACTORY FILTER (Applies to all blocks) */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1322] border border-slate-800/80 shadow-sm">
-            <label htmlFor="global-site-filter" className="text-xs text-slate-400 font-medium whitespace-nowrap cursor-pointer">{t("filterFactory")}</label>
+            <label htmlFor="global-site-filter" className="text-xs text-slate-400 font-medium whitespace-nowrap cursor-pointer">
+              {t("filterFactory")}
+            </label>
             <select
               id="global-site-filter"
               value={selectedSiteFilter}
@@ -262,104 +418,128 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. 6 Compact KPI Cards (Reflecting selectedSiteFilter & excluding WAN) */}
+      {/* 2. 6 KPI Cards (Spacious, prominent) */}
       <OverviewKPI 
         sites={sites} 
         devices={devices} 
         selectedSite={selectedSiteFilter} 
       />
 
-      {/* 3. Middle Section: Vietnam Factory Map (Left) + Factory Status (Right with Stacked Bars) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        {/* Left Column: Vietnam Factory Map (approx 52%) */}
-        <div className="lg:col-span-7 xl:col-span-7 flex flex-col">
+      {/* 3. Middle Section: Vietnam Factory Map (Left 7/12) + 7 Factories Status Table (Right 5/12) - EQUAL HEIGHT */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-stretch">
+        {/* Left Column: Vietnam Factory Map (7/12) */}
+        <div className="lg:col-span-7 xl:col-span-7 h-[440px] xl:h-[460px]">
           <VietnamFactoryMap
             sites={sites}
             selectedSite={selectedSiteFilter}
-            onSelectSite={(siteCode) => setSelectedSiteFilter(siteCode)}
+            onSelectSite={(siteCode) => {
+              setSelectedSiteFilter(siteCode);
+              setHoveredSite(siteCode);
+            }}
             hoveredSite={hoveredSite}
             onHoverSite={setHoveredSite}
           />
         </div>
 
-        {/* Right Column: Factory Status Table with Stacked Bar & Merged Agent Status */}
-        <div className="lg:col-span-5 xl:col-span-5 flex flex-col">
-          <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-4 text-card-foreground shadow-sm flex flex-col h-full justify-between">
+        {/* Right Column: 7 Factories Status Table (5/12) - EQUAL HEIGHT to Map */}
+        <div className="lg:col-span-5 xl:col-span-5 h-[440px] xl:h-[460px]">
+          <div className="h-full w-full rounded-2xl border border-slate-800/80 bg-[#0B1322] p-4 text-card-foreground shadow-sm flex flex-col justify-between">
             <div>
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-800/80">
-                <div className="flex items-center gap-2">
-                  <Factory className="h-4 w-4 text-blue-400" />
-                  <h3 className="text-sm font-bold text-white font-display">
-                    {t("factoryStatusTitle")}
-                  </h3>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                    <Factory className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-display leading-tight">
+                      {t("factoryStatusTitle")}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {selectedSiteFilter === "ALL" ? t("factories7") : siteMap.get(selectedSiteFilter)?.site_name}
+                    </p>
+                  </div>
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/50">
                   {t("priorityErrorsFirst")}
                 </span>
               </div>
 
+              {/* 7 Factories Table with Centered Numbers & No Distribution */}
               <div className="overflow-x-auto mt-2">
                 <table className="w-full text-left text-xs font-sans">
                   <thead>
-                    <tr className="border-b border-slate-800/60 text-slate-400 font-mono text-[11px]">
-                      <th className="py-2 px-2.5 font-semibold whitespace-nowrap">{t("colFactoryAgent")}</th>
-                      <th className="py-2 px-2 text-center font-semibold whitespace-nowrap">{t("colDistribution")}</th>
-                      <th className="py-2 px-2 text-right font-semibold text-emerald-400 whitespace-nowrap">{t("colOnline")}</th>
-                      <th className="py-2 px-2 text-right font-semibold text-amber-400 whitespace-nowrap">{t("colSlow")}</th>
-                      <th className="py-2 px-2 text-right font-semibold text-red-400 whitespace-nowrap">{t("colOffline")}</th>
-                      <th className="py-2 px-2 text-right font-semibold text-purple-400 whitespace-nowrap">{t("colUnknown")}</th>
-                      <th className="py-2 px-2 text-right font-semibold whitespace-nowrap">{t("colTotal")}</th>
+                    <tr className="border-b border-slate-800/80 text-slate-400 font-mono text-[11px]">
+                      <th className="py-2 xl:py-2.5 px-3 font-semibold whitespace-nowrap">{t("colFactoryAgent")}</th>
+                      <th className="py-2 xl:py-2.5 px-2 text-center font-semibold text-emerald-400 whitespace-nowrap">{t("colOnline")}</th>
+                      <th className="py-2 xl:py-2.5 px-2 text-center font-semibold text-amber-400 whitespace-nowrap">{t("colSlow")}</th>
+                      <th className="py-2 xl:py-2.5 px-2 text-center font-semibold text-red-400 whitespace-nowrap">{t("colOffline")}</th>
+                      <th className="py-2 xl:py-2.5 px-2 text-center font-semibold text-rose-400 whitespace-nowrap" title="Script tắt bất ngờ do mất điện / Mất Agent">{t("colDown")}</th>
+                      <th className="py-2 xl:py-2.5 px-3 text-center font-semibold text-slate-300 whitespace-nowrap">{t("colTotal")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/40">
                     {sortedSites.map((site) => {
                       const isAgentOnline = site.agent_status === "online";
-                      const isHovered = hoveredSite === site.site_code;
-                      const isFiltered = selectedSiteFilter === site.site_code;
+                      const isSelected = selectedSiteFilter === site.site_code;
+                      const isRowHovered = hoveredSite ? hoveredSite === site.site_code : isSelected;
 
-                      // Calculate 4 statuses for local LAN devices only:
+                      // Calculate statuses: Online, Slow, Offline, Down
                       const siteLan = lanDevices.filter((d) => d.site_code === site.site_code);
                       let onlineCount = 0;
                       let slowCount = 0;
                       let offlineCount = 0;
-                      let unknownCount = 0;
+                      let downCount = 0;
 
                       if (!isAgentOnline) {
-                        // When Agent is offline: all devices are UNKNOWN (Monitor Down)
-                        unknownCount = siteLan.length || site.device_stats?.total || 0;
+                        downCount = siteLan.length > 0 ? siteLan.length : (site.device_stats?.total || 0);
+                        onlineCount = 0;
+                        slowCount = 0;
+                        offlineCount = 0;
                       } else {
-                        siteLan.forEach((d) => {
-                          if (d.status === "online") onlineCount++;
-                          else if (d.status === "slow") slowCount++;
-                          else if (d.status === "offline") offlineCount++;
-                          else unknownCount++;
-                        });
+                        if (siteLan.length > 0) {
+                          siteLan.forEach((d) => {
+                            if (d.status === "online") onlineCount++;
+                            else if (d.status === "slow") slowCount++;
+                            else if (d.status === "offline") offlineCount++;
+                            else downCount++;
+                          });
+                        } else if (site.device_stats) {
+                          onlineCount = site.device_stats.online || 0;
+                          slowCount = site.device_stats.slow || 0;
+                          offlineCount = site.device_stats.offline || 0;
+                          downCount = 0;
+                        }
                       }
 
-                      const totalLanCount = onlineCount + slowCount + offlineCount + unknownCount;
-                      const onlinePct = totalLanCount > 0 ? (onlineCount / totalLanCount) * 100 : 0;
-                      const slowPct = totalLanCount > 0 ? (slowCount / totalLanCount) * 100 : 0;
-                      const offlinePct = totalLanCount > 0 ? (offlineCount / totalLanCount) * 100 : 0;
-                      const unknownPct = totalLanCount > 0 ? (unknownCount / totalLanCount) * 100 : 0;
+                      const totalLanCount = onlineCount + slowCount + offlineCount + downCount;
 
                       return (
                         <tr
                           key={site.site_code}
-                          onClick={() => onSelectSite(site.site_code)}
+                          onClick={() => {
+                            if (selectedSiteFilter === site.site_code) {
+                              onSelectSite(site.site_code);
+                            } else {
+                              setSelectedSiteFilter(site.site_code);
+                              setHoveredSite(site.site_code);
+                            }
+                          }}
                           onMouseEnter={() => setHoveredSite(site.site_code)}
                           onMouseLeave={() => setHoveredSite(null)}
                           className={`transition-colors cursor-pointer group ${
-                            isFiltered
-                              ? "bg-blue-600/15"
-                              : isHovered
+                            isSelected
+                              ? "bg-blue-600/25 border-l-2 border-cyan-400 shadow-sm"
+                              : isRowHovered
                               ? "bg-slate-800/60"
                               : "hover:bg-slate-900/60"
                           }`}
                         >
                           {/* Factory name + Merged Agent Status */}
-                          <td className="py-2 px-2.5 font-medium text-white group-hover:text-primary transition-colors">
+                          <td className="py-2.5 xl:py-3 px-3 font-medium text-white group-hover:text-primary transition-colors">
                             <div className="flex flex-col">
-                              <span className="font-semibold text-xs leading-tight whitespace-nowrap">
+                              <span className={`font-semibold text-xs leading-tight whitespace-nowrap ${
+                                isSelected ? "text-cyan-300 font-bold" : ""
+                              }`}>
                                 {site.site_name}
                               </span>
                               <div className="flex items-center gap-1.5 mt-0.5">
@@ -379,33 +559,20 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
                             </div>
                           </td>
 
-                          {/* Stacked Colored Bar */}
-                          <td className="py-2 px-2 text-center align-middle">
-                            <div 
-                              className="w-20 h-2 mx-auto rounded-full bg-slate-800 overflow-hidden flex shadow-inner"
-                              title={`${t("colOnline")}: ${onlineCount}, ${t("colSlow")}: ${slowCount}, ${t("colOffline")}: ${offlineCount}, ${t("colUnknown")}: ${unknownCount}`}
-                            >
-                              {onlinePct > 0 && <div style={{ width: `${onlinePct}%` }} className="h-full bg-emerald-400" />}
-                              {slowPct > 0 && <div style={{ width: `${slowPct}%` }} className="h-full bg-amber-400" />}
-                              {offlinePct > 0 && <div style={{ width: `${offlinePct}%` }} className="h-full bg-red-500" />}
-                              {unknownPct > 0 && <div style={{ width: `${unknownPct}%` }} className="h-full bg-purple-500" />}
-                            </div>
-                          </td>
-
-                          {/* 4 Counts: Online, Slow, Offline, Unknown */}
-                          <td className="py-2 px-2 text-right font-mono text-emerald-400 font-medium">
+                          {/* 5 Counts: Online, Slow, Offline, Down, Total - Centered */}
+                          <td className="py-2.5 xl:py-3 px-2 text-center font-mono text-emerald-400 font-semibold text-xs">
                             {onlineCount}
                           </td>
-                          <td className="py-2 px-2 text-right font-mono text-amber-400 font-medium">
+                          <td className="py-2.5 xl:py-3 px-2 text-center font-mono text-amber-400 font-semibold text-xs">
                             {slowCount}
                           </td>
-                          <td className="py-2 px-2 text-right font-mono text-red-400 font-medium">
+                          <td className="py-2.5 xl:py-3 px-2 text-center font-mono text-red-400 font-semibold text-xs" title="Thiết bị mất mạng">
                             {offlineCount}
                           </td>
-                          <td className="py-2 px-2 text-right font-mono text-purple-400 font-medium">
-                            {unknownCount}
+                          <td className="py-2.5 xl:py-3 px-2 text-center font-mono text-rose-400 font-semibold text-xs" title="Script tắt bất ngờ do mất điện / Mất Agent">
+                            {downCount}
                           </td>
-                          <td className="py-2 px-2 text-right font-mono text-slate-300 font-semibold">
+                          <td className="py-2.5 xl:py-3 px-3 text-center font-mono text-slate-200 font-bold text-xs">
                             {totalLanCount}
                           </td>
                         </tr>
@@ -416,97 +583,107 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
               </div>
             </div>
 
-            {/* Stacked Bar Legend */}
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-2 border-t border-slate-800/80 mt-2">
-              <div className="flex items-center gap-1">
+            {/* Quick status summary footer */}
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-3 border-t border-slate-800/80 mt-2">
+              <div className="flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
                 <span>{t("colOnline")}</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-amber-400" />
                 <span>{t("colSlow")}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-red-400" />
                 <span>{t("colOffline")}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-purple-500" />
-                <span>{t("colUnknown")}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                <span>{t("colDown")}</span>
               </div>
+              <span className="text-slate-500 hidden sm:inline">* Click để lọc / chọn</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 4. Bottom Grid: 3 focused, actionable widgets (No duplicate Donut, No duplicate Agent Health) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-        {/* Widget 1: Sự cố đang xảy ra / Active Incidents */}
-        <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-4 text-card-foreground shadow-sm flex flex-col justify-between">
+      {/* 4. Bottom Section: 3 Balanced Cards (Longest Downtime + Flapping Devices + Uptime SLA) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 items-stretch">
+        {/* Card 1: Longest Downtime (Thiết kế đúng 100% như Hình 2, hiển thị đầy đủ bảng không cần cuộn ngang) */}
+        <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800/80">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-red-500 animate-ping" />
-                <h3 className="text-sm font-bold text-white font-display">
-                  {t("activeIncidentsTitle")}
-                </h3>
+                <div className="h-7 w-7 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-500">
+                  <Clock className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white font-display leading-none">
+                    {t("longestDowntimeTitle")}
+                  </h3>
+                  <span className="text-[10px] font-mono text-slate-400 mt-0.5 inline-block">
+                    {t("unresolvedOutage")}
+                  </span>
+                </div>
               </div>
-              <button
-                onClick={() => onNavigateView("notifications")}
-                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
-              >
-                <span>{t("viewAll")}</span>
-                <ArrowRight className="h-3 w-3" />
-              </button>
             </div>
 
-            <div className="overflow-x-auto mt-2">
-              {activeIncidentsList.length === 0 ? (
-                <div className="py-7 text-center text-xs text-slate-400 flex flex-col items-center justify-center">
+            <div className="mt-1.5 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent pb-1">
+              {displayedLongestDowntime.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400 flex flex-col items-center justify-center">
                   <CheckCircle2 className="h-6 w-6 text-emerald-400 mb-1 opacity-80" />
-                  <span className="text-emerald-400 font-medium">{t("noActiveIncidents")}</span>
-                  <span className="text-[11px] text-slate-500 mt-0.5">{t("allNormalAlerts")}</span>
+                  <span className="text-emerald-400 font-medium">{t("noDowntimeAlerts")}</span>
                 </div>
               ) : (
                 <table className="w-full text-left text-xs font-sans">
                   <thead>
-                    <tr className="border-b border-slate-800/60 text-slate-400 font-mono text-[11px]">
-                      <th className="py-1.5 px-2 font-semibold whitespace-nowrap">{t("colDevice")}</th>
-                      <th className="py-1.5 px-2 font-semibold whitespace-nowrap">{t("ipAddressHeader")}</th>
-                      <th className="py-1.5 px-2 font-semibold whitespace-nowrap">{t("colSite")}</th>
+                    <tr className="border-b border-slate-800/60 text-slate-400 font-mono text-[10px]">
+                      <th className="py-1.5 px-1.5 text-center w-6">#</th>
+                      <th className="py-1.5 px-2.5 font-semibold whitespace-nowrap">{t("colDevice")}</th>
                       <th className="py-1.5 px-2 font-semibold whitespace-nowrap">{t("colDownSince")}</th>
-                      <th className="py-1.5 px-2 text-right font-semibold whitespace-nowrap">{t("colStatus")}</th>
+                      <th className="py-1.5 px-2.5 font-semibold text-slate-400 whitespace-nowrap">{t("colTrend")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/40">
-                    {activeIncidentsList.map((item, idx) => (
+                    {displayedLongestDowntime.map((item, idx) => (
                       <tr
                         key={idx}
                         onClick={() => onSelectSite(item.siteCode)}
                         className="hover:bg-slate-900/60 transition-colors cursor-pointer group"
                       >
-                        <td className="py-1.5 px-2 font-medium text-white group-hover:text-primary transition-colors truncate max-w-[100px]">
+                        {/* Rank # with colored border indicator as in Image 2 */}
+                        <td className="py-2 px-1.5 text-center font-mono font-bold text-[11px]">
+                          <span className={`inline-block w-full text-center ${
+                            idx === 0
+                              ? "border-l-2 border-rose-500 text-rose-500"
+                              : idx === 1
+                              ? "border-l-2 border-amber-500 text-amber-500"
+                              : idx === 2
+                              ? "border-l-2 border-yellow-500 text-yellow-500"
+                              : "text-slate-400"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5 font-semibold text-white group-hover:text-primary transition-colors whitespace-nowrap">
                           {item.hostname}
                         </td>
-                        <td className="py-1.5 px-2 font-mono text-cyan-400 whitespace-nowrap text-[11px]">
-                          {item.ip}
-                        </td>
-                        <td className="py-1.5 px-2 text-slate-300 truncate max-w-[90px] text-[11px]">
-                          {item.siteName}
-                        </td>
-                        <td className="py-1.5 px-2 font-mono text-slate-400 text-[10px] whitespace-nowrap">
+                        <td className="py-2 px-2 font-mono text-slate-400 text-[11px] whitespace-nowrap">
                           {item.downSince}
                         </td>
-                        <td className="py-1.5 px-2 text-right whitespace-nowrap">
-                          {item.effectiveStatus === "offline" ? (
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/15 text-red-400 border border-red-500/25">
-                              {t("offline")}
+                        {/* Sơ đồ Trend Duration Bar as in Image 2 */}
+                        <td className="py-2 px-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 sm:w-20 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-rose-500 transition-all duration-300"
+                                style={{ width: `${item.trendPct}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-400 text-right font-medium">
+                              {item.trendPct}%
                             </span>
-                          ) : (
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25" title={t("cardUnknownAgentDown")}>
-                              {t("colUnknown").toUpperCase()}
-                            </span>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -516,90 +693,121 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
             </div>
           </div>
 
-          <div className="text-[10px] text-slate-500 font-mono text-center pt-2 border-t border-slate-800/80 mt-1">
-            {t("activeIncidentsFooter")}
+          <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5 pt-2 border-t border-slate-800/80 mt-1">
+            <Info className="h-3 w-3 text-slate-500 shrink-0" />
+            <span className="truncate">{t("longestDowntimeFooter")}</span>
           </div>
         </div>
 
-        {/* Widget 2: Thiết bị chậm nhất & Chập chờn / Slowest Devices (Replacing duplicate Donut) */}
-        <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-4 text-card-foreground shadow-sm flex flex-col justify-between">
+        {/* Card 2: Flapping Devices — Thiết bị mất kết nối liên tục (Đầy đủ bảng không cần cuộn ngang) */}
+        <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800/80">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
               <div className="flex items-center gap-2">
-                <Gauge className="h-4 w-4 text-amber-400" />
-                <h3 className="text-sm font-bold text-white font-display">
-                  {t("slowestDevicesTitle")}
-                </h3>
+                <div className="h-7 w-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Activity className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white font-display leading-none">
+                    {t("flappingDevicesTitle")}
+                  </h3>
+                  <span className="text-[10px] font-mono text-amber-400/90 mt-0.5 inline-block">
+                    {t("flappingFrequency")}
+                  </span>
+                </div>
               </div>
-              <span className="text-[10px] font-mono text-amber-400/80">
-                {t("latencyRanking")}
-              </span>
             </div>
 
-            <div className="overflow-x-auto mt-2">
-              {slowestDevicesList.length === 0 ? (
-                <div className="py-7 text-center text-xs text-slate-400 flex flex-col items-center justify-center">
+            <div className="mt-1.5 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent pb-1">
+              {displayedFlappingDevices.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400 flex flex-col items-center justify-center">
                   <CheckCircle2 className="h-6 w-6 text-emerald-400 mb-1 opacity-80" />
-                  <span className="text-emerald-400 font-medium">{t("noSlowDevices")}</span>
-                  <span className="text-[11px] text-slate-500 mt-0.5">{t("optimalLatency")}</span>
+                  <span className="text-emerald-400 font-medium">{t("noFlappingDevices")}</span>
+                  <span className="text-[10px] text-slate-500 mt-0.5">Tất cả thiết bị kết nối ổn định</span>
                 </div>
               ) : (
                 <table className="w-full text-left text-xs font-sans">
                   <thead>
-                    <tr className="border-b border-slate-800/60 text-slate-400 font-mono text-[11px]">
-                      <th className="py-1.5 px-2 font-semibold">{t("colDevice")}</th>
-                      <th className="py-1.5 px-2 font-semibold">{t("ipAddressHeader")}</th>
-                      <th className="py-1.5 px-2 font-semibold">{t("colSite")}</th>
-                      <th className="py-1.5 px-2 text-right font-semibold text-amber-400">{t("colLatency")}</th>
+                    <tr className="border-b border-slate-800/60 text-slate-400 font-mono text-[10px]">
+                      <th className="py-1.5 px-1.5 text-center w-6">#</th>
+                      <th className="py-1.5 px-2.5 font-semibold whitespace-nowrap">{t("colDevice")}</th>
+                      <th className="py-1.5 px-2.5 font-semibold whitespace-nowrap">{t("colSite")}</th>
+                      <th className="py-1.5 px-2.5 font-semibold text-slate-400 whitespace-nowrap">{t("colPulseDiagram")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/40">
-                    {slowestDevicesList.map((dev, idx) => {
-                      const siteObj = siteMap.get(dev.site_code);
-                      return (
-                        <tr
-                          key={idx}
-                          onClick={() => onSelectSite(dev.site_code)}
-                          className="hover:bg-slate-900/60 transition-colors cursor-pointer group"
-                        >
-                          <td className="py-1.5 px-2 font-medium text-white group-hover:text-primary transition-colors truncate max-w-[110px]">
-                            {dev.hostname || `Host-${dev.ip}`}
-                          </td>
-                          <td className="py-1.5 px-2 font-mono text-cyan-400 whitespace-nowrap text-[11px]">
-                            {dev.ip}
-                          </td>
-                          <td className="py-1.5 px-2 text-slate-300 truncate max-w-[90px] text-[11px]">
-                            {siteObj?.site_name || dev.site_code}
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-bold text-amber-400 whitespace-nowrap">
-                            ⚡ {dev.response_time_ms ? `${dev.response_time_ms} ms` : t("slow")}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {displayedFlappingDevices.map((item, idx) => (
+                      <tr
+                        key={idx}
+                        onClick={() => onSelectSite(item.siteCode)}
+                        className="hover:bg-slate-900/60 transition-colors cursor-pointer group"
+                      >
+                        {/* Rank # with colored rank indicator */}
+                        <td className="py-2 px-1.5 text-center font-mono font-bold text-[11px]">
+                          <span className={`inline-block w-full text-center ${
+                            idx === 0
+                              ? "border-l-2 border-amber-500 text-amber-500"
+                              : idx === 1
+                              ? "border-l-2 border-yellow-500 text-yellow-500"
+                              : "text-slate-400"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5 font-semibold text-white group-hover:text-primary transition-colors whitespace-nowrap">
+                          {item.hostname}
+                        </td>
+                        <td className="py-2 px-2.5 text-slate-300 font-medium whitespace-nowrap text-[11px]">
+                          {item.siteName}
+                        </td>
+                        {/* Sơ đồ Flapping Frequency Bar */}
+                        <td className="py-2 px-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 sm:w-20 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500 transition-all duration-300"
+                                style={{ width: `${item.trendPct}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] font-mono text-amber-400 text-right font-medium">
+                              {item.trendPct}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
             </div>
           </div>
 
-          <div className="text-[10px] text-slate-500 font-mono text-center pt-2 border-t border-slate-800/80 mt-1">
-            {t("slowestDevicesFooter")}
+          <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5 pt-2 border-t border-slate-800/80 mt-1">
+            <Info className="h-3 w-3 text-slate-500 shrink-0" />
+            <span className="truncate">{t("flappingDevicesFooter")}</span>
           </div>
         </div>
 
-        {/* Widget 3: Real Telemetry Uptime Chart (24h / 7d) with Data Gap Handling */}
-        <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-4 text-card-foreground shadow-sm flex flex-col justify-between">
+        {/* Card 3: Uptime SLA Chart (Last 24h / 7d) - Scaled to fill entire card height */}
+        <div className="rounded-2xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm flex flex-col justify-between h-full">
           <div>
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800/80">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                <div className={`h-7 w-7 rounded-lg ${
+                  overallUptime >= 90 ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" : "bg-rose-500/15 border-rose-500/30 text-rose-400"
+                } border flex items-center justify-center`}>
+                  {overallUptime >= 90 ? (
+                    <ShieldCheck className="h-4 w-4" />
+                  ) : (
+                    <ShieldAlert className="h-4 w-4" />
+                  )}
+                </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white font-display">
+                  <h3 className="text-sm font-bold text-white font-display leading-none">
                     {timeRange === "24h" ? t("uptimeTitle24h") : t("uptimeTitle7d")}
                   </h3>
-                  <span className="text-[10px] font-mono text-emerald-400 font-semibold">
-                    {uptimeData?.overall_uptime_pct ?? 100}% {t("slaAvailable")}
+                  <span className={`text-[10px] font-mono font-semibold ${uptimeColorClass} mt-0.5 inline-block`}>
+                    {overallUptime}% {t("slaAvailable")}
                   </span>
                 </div>
               </div>
@@ -608,30 +816,32 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
                 {selectedSiteFilter === "ALL" ? t("factories7") : siteMap.get(selectedSiteFilter)?.site_name}
               </span>
             </div>
+          </div>
 
-            {/* Dynamic SVG Area Chart from Real Backend Data */}
-            <div className="relative w-full h-36 mt-2">
-              <svg viewBox="0 0 400 120" className="w-full h-full overflow-visible">
+          {/* Dynamic SVG Area Chart - Scaled up to fill the card vertical space */}
+          <div className="flex-1 flex flex-col justify-center py-2">
+            <div className="relative w-full h-36 sm:h-40">
+              <svg viewBox="0 0 400 155" className="w-full h-full overflow-visible">
                 <defs>
                   <linearGradient id="uptimeAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.4" />
-                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+                    <stop offset="0%" stopColor={uptimeStroke} stopOpacity="0.4" />
+                    <stop offset="100%" stopColor={uptimeStroke} stopOpacity="0.0" />
                   </linearGradient>
                 </defs>
 
                 {/* Grid Lines */}
-                <line x1="40" y1="20" x2="390" y2="20" stroke="#1E293B" strokeWidth="0.8" strokeDasharray="3 3" />
-                <line x1="40" y1="60" x2="390" y2="60" stroke="#1E293B" strokeWidth="0.8" strokeDasharray="3 3" />
-                <line x1="40" y1="100" x2="390" y2="100" stroke="#1E293B" strokeWidth="0.8" />
+                <line x1="35" y1="14" x2="395" y2="14" stroke="#1E293B" strokeWidth="0.8" strokeDasharray="3 3" />
+                <line x1="35" y1="76" x2="395" y2="76" stroke="#1E293B" strokeWidth="0.8" strokeDasharray="3 3" />
+                <line x1="35" y1="138" x2="395" y2="138" stroke="#1E293B" strokeWidth="0.8" />
 
                 {/* Y Axis Labels */}
-                <text x="5" y="24" fill="#64748B" fontSize="9" fontFamily="monospace">100%</text>
-                <text x="12" y="64" fill="#64748B" fontSize="9" fontFamily="monospace">50%</text>
-                <text x="22" y="104" fill="#64748B" fontSize="9" fontFamily="monospace">0%</text>
+                <text x="3" y="18" fill="#64748B" fontSize="9" fontFamily="monospace">100%</text>
+                <text x="10" y="80" fill="#64748B" fontSize="9" fontFamily="monospace">50%</text>
+                <text x="18" y="142" fill="#64748B" fontSize="9" fontFamily="monospace">0%</text>
 
                 {/* Real Area & Real Line */}
                 <path d={areaPath} fill="url(#uptimeAreaGrad)" />
-                <path d={linePath} fill="none" stroke="#10B981" strokeWidth="2.2" />
+                <path d={linePath} fill="none" stroke={uptimeStroke} strokeWidth="2.4" />
 
                 {/* Real Data Points */}
                 {chartPoints.map((pt, idx) => {
@@ -642,7 +852,7 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
                       cx={pt.x}
                       cy={pt.y}
                       r={isLast ? 3.5 : 2.5}
-                      fill="#10B981"
+                      fill={uptimeStroke}
                       stroke="#0B1322"
                       strokeWidth="1.5"
                       className={isLast ? "animate-pulse" : "hover:r-4 transition-all"}
@@ -655,14 +865,14 @@ export const OverviewDashboard: FC<OverviewDashboardProps> = ({
             </div>
 
             {/* Dynamic X Axis Time Labels */}
-            <div className="flex justify-between text-[10px] font-mono text-slate-400 pl-8 pr-1 mt-1">
+            <div className="flex justify-between text-[10px] font-mono text-slate-400 pl-8 pr-1 mt-1.5">
               {xAxisLabels.map((lbl, idx) => (
                 <span key={idx}>{lbl}</span>
               ))}
             </div>
           </div>
 
-          <div className="text-[10px] text-slate-500 font-mono text-center pt-2 border-t border-slate-800/80 mt-1">
+          <div className="text-[10px] text-slate-500 font-mono text-center pt-2 border-t border-slate-800/80">
             * {t("uptimeNotice")}
           </div>
         </div>

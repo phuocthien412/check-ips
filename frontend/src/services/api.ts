@@ -279,6 +279,51 @@ export async function fetchUptimeHistory(site_code: string = "ALL", range: strin
   }
 }
 
+export interface LongestDowntimeItem {
+  device: string;
+  ip: string;
+  site_code: string;
+  site_name: string;
+  down_since: string;
+  duration_seconds: number;
+  duration_str: string;
+  status: "down" | "offline";
+  trend_pct: number;
+}
+
+export async function fetchLongestDowntime(site_code: string = "ALL"): Promise<LongestDowntimeItem[]> {
+  try {
+    const url = `${BASE_URL}/telemetry/longest-downtime?site_code=${site_code}&limit=5`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+export interface FlappingDeviceItem {
+  device: string;
+  ip: string;
+  site_code: string;
+  site_name: string;
+  flap_count: number;
+  flap_rate_str: string;
+  current_status: "online" | "slow" | "offline" | "down" | "unknown";
+  trend_pct: number;
+}
+
+export async function fetchFlappingDevices(site_code: string = "ALL"): Promise<FlappingDeviceItem[]> {
+  try {
+    const url = `${BASE_URL}/telemetry/flapping-devices?site_code=${site_code}&limit=5`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function loginUser(credentials: { 
   username: string; 
   password: string; 

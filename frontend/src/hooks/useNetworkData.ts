@@ -1,6 +1,13 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchSites, fetchDevices, fetchAlerts, fetchUptimeHistory } from "../services/api";
+import { 
+  fetchSites, 
+  fetchDevices, 
+  fetchAlerts, 
+  fetchUptimeHistory,
+  fetchLongestDowntime,
+  fetchFlappingDevices
+} from "../services/api";
 import type { Site } from "../types";
 
 const SSE_URL = import.meta.env.VITE_SSE_URL || "http://localhost:8000/api/v1/stream/events";
@@ -38,6 +45,24 @@ export function useUptimeHistory(siteCode: string = "ALL", range: string = "24h"
     queryFn: () => fetchUptimeHistory(siteCode, range),
     refetchInterval: 10000,
     staleTime: 5000,
+  });
+}
+
+export function useLongestDowntime(siteCode: string = "ALL") {
+  return useQuery({
+    queryKey: ["longest_downtime", siteCode],
+    queryFn: () => fetchLongestDowntime(siteCode),
+    refetchInterval: 5000,
+    staleTime: 3000,
+  });
+}
+
+export function useFlappingDevices(siteCode: string = "ALL") {
+  return useQuery({
+    queryKey: ["flapping_devices", siteCode],
+    queryFn: () => fetchFlappingDevices(siteCode),
+    refetchInterval: 5000,
+    staleTime: 3000,
   });
 }
 

@@ -1,6 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { FC } from "react";
-import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle2, Search, Trash2 } from "lucide-react";
+import { 
+  Bell, 
+  AlertTriangle, 
+  AlertCircle, 
+  Info, 
+  CheckCircle2, 
+  Search, 
+  Trash2,
+  ChevronLeft,
+  ChevronRight
+} from "lucide-react";
 import type { Alert, Site } from "../../types";
 import { useI18n } from "../../i18n";
 import { ConfirmModal } from "../common/ConfirmModal";
@@ -38,6 +48,29 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
     }
     return true;
   });
+
+  // Pagination State (Default 10 per page, with 25, 50, All - same as DeviceList)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Reset to page 1 on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, levelFilter, siteFilter]);
+
+  const totalItems = filteredAlerts.length;
+  const effectivePageSize = pageSize === -1 ? totalItems : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalItems / (pageSize === -1 ? Math.max(1, totalItems) : pageSize)));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedAlerts = useMemo(() => {
+    if (pageSize === -1) return filteredAlerts;
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredAlerts.slice(start, start + pageSize);
+  }, [filteredAlerts, safeCurrentPage, pageSize]);
+
+  const showingStart = totalItems === 0 ? 0 : (safeCurrentPage - 1) * effectivePageSize + 1;
+  const showingEnd = pageSize === -1 ? totalItems : Math.min(safeCurrentPage * pageSize, totalItems);
 
   const getSiteName = (code: string) => {
     const s = sites.find(x => x.site_code === code);
@@ -128,7 +161,7 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
 
       {/* Notifications List */}
       <div className="space-y-2.5">
-        {filteredAlerts.length === 0 ? (
+        {paginatedAlerts.length === 0 ? (
           <div className="bg-card border border-border/80 rounded-2xl p-12 text-center text-muted-foreground">
             <CheckCircle2 className="h-10 w-10 text-online mx-auto mb-3 opacity-70" />
             <h4 className="font-semibold text-foreground text-sm">{t("noAlertsTitle")}</h4>
@@ -137,7 +170,7 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
             </p>
           </div>
         ) : (
-          filteredAlerts.map((alt, idx) => {
+          paginatedAlerts.map((alt, idx) => {
             const isCrit = alt.level === "critical";
             const isWarn = alt.level === "warning";
             const alertIndexStr = `#ALERT-${alt.alert_index || (101 + idx)}`;
@@ -214,6 +247,88 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
           })
         )}
       </div>
+
+      {/* Pagination Controls Bar (Reused identical from DeviceList) */}
+      {totalItems > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-3 px-4 bg-card border border-border/80 rounded-xl text-xs text-muted-foreground shadow-sm">
+          {/* Rows per page selector & range counter */}
+          <div className="flex items-center gap-3.5 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 font-sans">{language === "vi" ? "Hiển thị:" : "Show:"}</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer font-sans"
+              >
+                <option value={10}>10 / {language === "vi" ? "trang" : "page"}</option>
+                <option value={25}>25 / {language === "vi" ? "trang" : "page"}</option>
+                <option value={50}>50 / {language === "vi" ? "trang" : "page"}</option>
+                <option value={-1}>{language === "vi" ? "Tất cả" : "All"} ({totalItems})</option>
+              </select>
+            </div>
+
+            <span className="font-mono text-slate-400">
+              <strong className="text-foreground">{showingStart}-{showingEnd}</strong> {language === "vi" ? "trong tổng số" : "of"}{" "}
+              <strong className="text-foreground">{totalItems}</strong> {language === "vi" ? "thông báo" : "alerts"}
+            </span>
+          </div>
+
+          {/* Page Navigation Buttons */}
+          {pageSize !== -1 && totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safeCurrentPage <= 1}
+                className="p-1.5 rounded-lg border border-border bg-slate-900 text-slate-300 hover:text-white hover:border-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={language === "vi" ? "Trang trước" : "Previous page"}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => {
+                    if (totalPages <= 7) return true;
+                    if (p === 1 || p === totalPages) return true;
+                    return Math.abs(p - safeCurrentPage) <= 1;
+                  })
+                  .map((p, idx, arr) => {
+                    const prev = arr[idx - 1];
+                    const isEllipsis = prev && p - prev > 1;
+
+                    return (
+                      <div key={p} className="flex items-center">
+                        {isEllipsis && <span className="px-1 text-slate-500 font-mono">...</span>}
+                        <button
+                          onClick={() => setCurrentPage(p)}
+                          className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-mono font-medium transition-colors cursor-pointer ${
+                            p === safeCurrentPage
+                              ? "bg-blue-600 text-white font-bold shadow-sm shadow-blue-500/20"
+                              : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safeCurrentPage >= totalPages}
+                className="p-1.5 rounded-lg border border-border bg-slate-900 text-slate-300 hover:text-white hover:border-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={language === "vi" ? "Trang sau" : "Next page"}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Confirm Clear All Alerts Modal */}
       <ConfirmModal

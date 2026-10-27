@@ -5,7 +5,7 @@ import {
   AlertTriangle, 
   XCircle, 
   ShieldCheck, 
-  HelpCircle,
+  RadioOff,
   Globe
 } from "lucide-react";
 import type { Device } from "../../types";
@@ -144,14 +144,14 @@ export const FactoryDetailKPI: FC<FactoryDetailKPIProps> = ({
           </p>
         </div>
 
-        {/* 5. Unknown / Monitor Down */}
+        {/* 5. Down / Agent Down */}
         <div className="rounded-xl border border-slate-800/80 bg-[#0B1322] p-3.5 text-card-foreground shadow-sm hover:border-slate-700 transition-all">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-semibold text-purple-300">{t("kpiUnknown")}</span>
-            <HelpCircle className="h-4 w-4 text-purple-400" />
+            <span className="text-xs font-semibold text-rose-400">{t("cardUnknown")}</span>
+            <RadioOff className="h-4 w-4 text-rose-400" />
           </div>
           <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-display text-purple-300">{unknown}</span>
+            <span className="text-2xl font-bold font-display text-rose-400">{unknown}</span>
             <span className="text-xs text-slate-400">({unknownPercent}%)</span>
           </div>
           <p className="text-[11px] text-slate-400 mt-1 truncate">

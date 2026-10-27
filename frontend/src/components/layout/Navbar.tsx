@@ -1,12 +1,12 @@
 import type { FC } from "react";
-import { Bell, ChevronDown, PanelLeftClose, PanelLeftOpen, Globe } from "lucide-react";
+import { Bell, PanelLeftClose, PanelLeftOpen, Globe } from "lucide-react";
 import type { Site } from "../../types";
 import { useI18n } from "../../i18n";
 
 interface NavbarProps {
-  sites: Site[];
-  selectedSite: string;
-  onSelectSite: (siteCode: string) => void;
+  sites?: Site[];
+  selectedSite?: string;
+  onSelectSite?: (siteCode: string) => void;
   unreadAlertsCount: number;
   onOpenAlerts: () => void;
   onToggleSidebar: () => void;
@@ -15,9 +15,6 @@ interface NavbarProps {
 }
 
 export const Navbar: FC<NavbarProps> = ({
-  sites,
-  selectedSite,
-  onSelectSite,
   unreadAlertsCount,
   onOpenAlerts,
   onToggleSidebar,
@@ -28,7 +25,7 @@ export const Navbar: FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full border-b border-border/80 bg-background/95 backdrop-blur-md px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-      {/* Left: Sidebar Toggle Button (Desktop & Mobile) + Site Selector */}
+      {/* Left: Sidebar Toggle Button (Desktop & Mobile) */}
       <div className="flex items-center gap-3">
         {/* Toggle Button for Desktop */}
         <button
@@ -51,23 +48,6 @@ export const Navbar: FC<NavbarProps> = ({
         >
           <PanelLeftOpen className="h-5 w-5 text-primary" />
         </button>
-
-        {/* Site Selector Dropdown */}
-        <div className="relative min-w-[220px] sm:min-w-[280px]">
-          <select
-            value={selectedSite}
-            onChange={(e) => onSelectSite(e.target.value)}
-            className="w-full appearance-none bg-card border border-border rounded-xl pl-3 pr-8 py-2 text-xs sm:text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all cursor-pointer font-sans"
-          >
-            <option value="ALL">🏢 {t("allSites")}</option>
-            {sites.map((s) => (
-              <option key={s.site_code} value={s.site_code}>
-                {s.agent_status === "online" ? "🟢" : s.agent_status === "warning" ? "🟡" : "🔴"} {s.site_name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        </div>
       </div>
 
       {/* Right Side: Language Switcher (VN / EN) + Notification Bell */}
