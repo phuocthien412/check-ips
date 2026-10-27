@@ -21,6 +21,7 @@ import type { Device } from "../../types";
 import { isWanDevice, getEffectiveDeviceStatus, formatVietnamDateTime, formatRelativeVietnamTime } from "../../lib/utils";
 import { useI18n } from "../../i18n";
 import { FactoryDetailKPI } from "./FactoryDetailKPI";
+import { ConfirmModal } from "../common/ConfirmModal";
 
 interface DeviceListProps {
   devices: Device[];
@@ -84,12 +85,12 @@ export const DeviceList: FC<DeviceListProps> = ({
     setTimeout(() => setCopiedIp(null), 2000);
   };
 
-  const handleDelete = (e: MouseEvent, dev: Device) => {
+  const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
+
+  const promptDelete = (e: MouseEvent, dev: Device) => {
     e.stopPropagation();
-    const confirmMsg = `${t("deleteIpConfirm")}\nIP: ${dev.ip}${dev.hostname ? ` (${dev.hostname})` : ""}`;
-    if (window.confirm(confirmMsg)) {
-      onDeleteDevice(dev);
-    }
+    e.preventDefault();
+    setDeviceToDelete(dev);
   };
 
   const getDeviceIcon = (type?: string) => {
@@ -295,11 +296,12 @@ export const DeviceList: FC<DeviceListProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                       {renderStatusBadge(device.status, device)}
                       <button
-                        onClick={(e) => handleDelete(e, device)}
-                        className="p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        type="button"
+                        onClick={(e) => promptDelete(e, device)}
+                        className="p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                         title={t("deleteIpTooltip")}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -431,16 +433,23 @@ export const DeviceList: FC<DeviceListProps> = ({
                           <span className="text-slate-500">—</span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={(e) => handleDelete(e, device)}
-                            className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                            type="button"
+                            onClick={(e) => promptDelete(e, device)}
+                            className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors cursor-pointer"
                             title={t("deleteIpTooltip")}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
-                          <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors inline-block" />
+                          <ExternalLink 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectDevice(device);
+                            }}
+                            className="h-4 w-4 text-muted-foreground hover:text-primary transition-colors inline-block cursor-pointer" 
+                          />
                         </div>
                       </td>
                     </tr>
@@ -532,6 +541,24 @@ export const DeviceList: FC<DeviceListProps> = ({
           )}
         </>
       )}
+
+      {/* Confirm Delete Device Modal */}
+      <ConfirmModal
+        isOpen={!!deviceToDelete}
+        onClose={() => setDeviceToDelete(null)}
+        onConfirm={async () => {
+          if (deviceToDelete) {
+            await onDeleteDevice(deviceToDelete);
+            setDeviceToDelete(null);
+          }
+        }}
+        title={t("confirmDeleteDeviceTitle")}
+        message={t("confirmDeleteDeviceDesc")}
+        itemDetail={deviceToDelete ? `IP: ${deviceToDelete.ip}${deviceToDelete.hostname ? ` • Hostname: ${deviceToDelete.hostname}` : ''} • Site: ${deviceToDelete.site_code}` : undefined}
+        confirmText={t("confirmDeleteAction")}
+        cancelText={t("cancelAction")}
+        variant="danger"
+      />
     </div>
   );
 };

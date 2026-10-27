@@ -3,6 +3,7 @@ import type { FC } from "react";
 import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle2, Search, Trash2 } from "lucide-react";
 import type { Alert, Site } from "../../types";
 import { useI18n } from "../../i18n";
+import { ConfirmModal } from "../common/ConfirmModal";
 
 interface NotificationsPageProps {
   alerts: Alert[];
@@ -21,6 +22,8 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("ALL");
   const [siteFilter, setSiteFilter] = useState("ALL");
+  const [alertToDelete, setAlertToDelete] = useState<{ id: string; message: string } | null>(null);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
 
   const filteredAlerts = alerts.filter(alt => {
     if (levelFilter !== "ALL" && alt.level !== levelFilter) return false;
@@ -64,15 +67,9 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
 
         {alerts.length > 0 && onClearAlerts && (
           <button
-            onClick={() => {
-              const confirmMsg = language === "vi" 
-                ? "Bạn có chắc chắn muốn xóa toàn bộ thông báo cảnh báo?" 
-                : "Are you sure you want to clear all alerts?";
-              if (window.confirm(confirmMsg)) {
-                onClearAlerts();
-              }
-            }}
-            className="px-3 py-1.5 rounded-lg bg-slate-900 border border-border hover:bg-slate-800 text-muted-foreground hover:text-foreground text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            onClick={() => setShowClearAllConfirm(true)}
+            className="px-3 py-1.5 rounded-lg bg-slate-900 border border-border hover:bg-red-500/10 hover:border-red-500/30 text-muted-foreground hover:text-red-400 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            title={t("clearAllAlerts")}
           >
             <Trash2 className="h-3.5 w-3.5 text-red-400" />
             <span>{t("clearAllAlerts")}</span>
@@ -199,8 +196,11 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
                   </span>
                   {onDeleteAlert && (
                     <button
-                      onClick={() => {
-                        if (alt._id) onDeleteAlert(alt._id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const targetId = alt._id || (alt as any).id;
+                        if (targetId) setAlertToDelete({ id: targetId, message: alt.message });
                       }}
                       className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                       title={language === "vi" ? "Xóa thông báo này" : "Delete this alert"}
@@ -214,6 +214,41 @@ export const NotificationsPage: FC<NotificationsPageProps> = ({
           })
         )}
       </div>
+
+      {/* Confirm Clear All Alerts Modal */}
+      <ConfirmModal
+        isOpen={showClearAllConfirm}
+        onClose={() => setShowClearAllConfirm(false)}
+        onConfirm={async () => {
+          if (onClearAlerts) {
+            await onClearAlerts();
+            setShowClearAllConfirm(false);
+          }
+        }}
+        title={t("confirmClearAllAlertsTitle")}
+        message={t("confirmClearAllAlertsDesc")}
+        confirmText={t("confirmDeleteAction")}
+        cancelText={t("cancelAction")}
+        variant="danger"
+      />
+
+      {/* Confirm Delete Single Alert Modal */}
+      <ConfirmModal
+        isOpen={!!alertToDelete}
+        onClose={() => setAlertToDelete(null)}
+        onConfirm={async () => {
+          if (onDeleteAlert && alertToDelete) {
+            await onDeleteAlert(alertToDelete.id);
+            setAlertToDelete(null);
+          }
+        }}
+        title={t("confirmDeleteAlertTitle")}
+        message={t("confirmDeleteAlertDesc")}
+        itemDetail={alertToDelete?.message}
+        confirmText={t("confirmDeleteAction")}
+        cancelText={t("cancelAction")}
+        variant="danger"
+      />
     </div>
   );
 };

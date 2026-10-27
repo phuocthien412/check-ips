@@ -335,7 +335,7 @@ function Ping-TargetListFast {
     if ($tasks.Count -gt 0) {
         $rawTasks = @($tasks | ForEach-Object { $_.Task })
         try {
-            [System.Threading.Tasks.Task]::WaitAll($rawTasks) | Out-Null
+            [System.Threading.Tasks.Task]::WaitAll($rawTasks, 2500) | Out-Null
         } catch {}
 
         foreach ($item in $tasks) {
@@ -402,7 +402,7 @@ function Scan-SubnetFast {
     if ($tasks.Count -gt 0) {
         $rawTasks = @($tasks | ForEach-Object { $_.Task })
         try {
-            [System.Threading.Tasks.Task]::WaitAll($rawTasks) | Out-Null
+            [System.Threading.Tasks.Task]::WaitAll($rawTasks, 2500) | Out-Null
         } catch {}
 
         foreach ($item in $tasks) {
@@ -427,9 +427,45 @@ function Scan-SubnetFast {
     return $pings
 }
 
-# Monitoring Loop (30-second interval)
+# High-speed asynchronous reverse DNS hostname resolver (caps wait at 1.5s total)
+function Resolve-HostnamesFast {
+    param (
+        [string[]]$IPs,
+        [int]$TimeoutMs = 1500
+    )
+    $dnsMap = @{}
+    if (-not $IPs -or $IPs.Count -eq 0) { return $dnsMap }
+
+    $dnsTasks = @{}
+    foreach ($ip in $IPs) {
+        try {
+            $dnsTasks[$ip] = [System.Net.Dns]::GetHostEntryAsync($ip)
+        } catch {}
+    }
+
+    $taskList = @($dnsTasks.Values | Where-Object { $_ -ne $null })
+    if ($taskList.Count -gt 0) {
+        try {
+            [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$taskList, $TimeoutMs) | Out-Null
+        } catch {}
+    }
+
+    foreach ($ip in $dnsTasks.Keys) {
+        $t = $dnsTasks[$ip]
+        if ($t -and $t.IsCompleted -and -not $t.IsFaulted -and -not $t.IsCanceled) {
+            try {
+                if ($t.Result -and $t.Result.HostName) {
+                    $dnsMap[$ip] = $t.Result.HostName
+                }
+            } catch {}
+        }
+    }
+    return $dnsMap
+}
+
+# Monitoring Loop (15-second interval)
 $CycleCount = 1
-Write-AgentLog "Agent initialized. Mode: $ModeName. Site: $($SelectedSite.Name) ($($SelectedSite.CodeNM))" "INFO" Green
+Write-AgentLog "Agent initialized. Mode: $ModeName. Site: $($SelectedSite.Name) ($($SelectedSite.Code))" "INFO" Green
 
 try {
     while ($true) {
@@ -477,6 +513,10 @@ try {
             }
         } catch {}
 
+        # Resolve hostnames asynchronously IN PARALLEL only for responsive devices without a pre-set label
+        $unlabeledOnlineIps = @($DeviceMap.Values | Where-Object { $_.Status -in @("online", "slow") -and (-not $_.Label -or $_.Label.Trim() -eq "") } | ForEach-Object { $_.IP })
+        $resolvedHostnames = if ($unlabeledOnlineIps.Count -gt 0) { Resolve-HostnamesFast -IPs $unlabeledOnlineIps -TimeoutMs 1500 } else { @{} }
+
         # Build devices telemetry list
         $DeviceList = @()
         foreach ($entry in $DeviceMap.Values) {
@@ -484,11 +524,13 @@ try {
             $mac = $ArpCache[$ip]
             $label = $entry.Label
             
-            $hostname = if ($label) { $label } else { "Host-$ip" }
-            try {
-                $dnsHost = [System.Net.Dns]::GetHostEntry($ip).HostName
-                if ($dnsHost) { $hostname = $dnsHost }
-            } catch {}
+            $hostname = if ($label) {
+                $label
+            } elseif ($resolvedHostnames.ContainsKey($ip) -and $resolvedHostnames[$ip]) {
+                $resolvedHostnames[$ip]
+            } else {
+                "Host-$ip"
+            }
 
             # Classify device type
             $devType = "workstation"

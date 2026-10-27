@@ -1,16 +1,20 @@
+import { useState } from "react";
 import type { FC } from "react";
-import { X, Server, Activity, ArrowDown, ArrowUp } from "lucide-react";
+import { X, Server, Activity, ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import type { Device } from "../../types";
 import { formatBytes, formatUptime, formatVietnamDateTime } from "../../lib/utils";
 import { useI18n } from "../../i18n";
+import { ConfirmModal } from "../common/ConfirmModal";
 
 interface DeviceDetailSheetProps {
   device: Device | null;
   onClose: () => void;
+  onDeleteDevice?: (device: Device) => void;
 }
 
-export const DeviceDetailSheet: FC<DeviceDetailSheetProps> = ({ device, onClose }) => {
+export const DeviceDetailSheet: FC<DeviceDetailSheetProps> = ({ device, onClose, onDeleteDevice }) => {
   const { t } = useI18n();
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   if (!device) return null;
 
   const isOnline = device.status === "online";
@@ -180,7 +184,17 @@ export const DeviceDetailSheet: FC<DeviceDetailSheetProps> = ({ device, onClose 
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-border bg-slate-900/60 flex justify-end">
+        <div className="p-3 border-t border-border bg-slate-900/60 flex items-center justify-between">
+          {onDeleteDevice ? (
+            <button
+              onClick={() => setShowConfirmDelete(true)}
+              className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              title={t("deleteDevice")}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>{t("deleteDevice")}</span>
+            </button>
+          ) : <div />}
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
@@ -189,6 +203,25 @@ export const DeviceDetailSheet: FC<DeviceDetailSheetProps> = ({ device, onClose 
           </button>
         </div>
       </div>
+
+      {/* Confirm Delete Device Modal */}
+      <ConfirmModal
+        isOpen={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        onConfirm={async () => {
+          if (onDeleteDevice && device) {
+            await onDeleteDevice(device);
+            setShowConfirmDelete(false);
+            onClose();
+          }
+        }}
+        title={t("confirmDeleteDeviceTitle")}
+        message={t("confirmDeleteDeviceDesc")}
+        itemDetail={`IP: ${device.ip}${device.hostname ? ` • Hostname: ${device.hostname}` : ''} • Site: ${device.site_code}`}
+        confirmText={t("confirmDeleteAction")}
+        cancelText={t("cancelAction")}
+        variant="danger"
+      />
     </div>
   );
 };

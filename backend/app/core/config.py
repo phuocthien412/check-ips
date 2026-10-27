@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "network_monitoring"
 
     # Watchdog & Heartbeat
-    AGENT_TIMEOUT_SECONDS: int = 25
+    AGENT_TIMEOUT_SECONDS: int = 50
     WATCHDOG_INTERVAL_SECONDS: int = 3
 
     # CORS

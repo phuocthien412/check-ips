@@ -13,7 +13,8 @@ import { AlertDrawer } from "./components/dashboard/AlertDrawer";
 import { AddDeviceModal } from "./components/dashboard/AddDeviceModal";
 import { LoginPage } from "./components/auth/LoginPage";
 import { addPingDevice, deletePingDevice, clearAllAlerts, deleteAlert } from "./services/api";
-import { I18nProvider } from "./i18n";
+import { I18nProvider, useI18n } from "./i18n";
+import { useToast } from "./context/ToastContext";
 import type { Device, UserSession } from "./types";
 
 const queryClient = new QueryClient({
@@ -135,6 +136,9 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
     setSearchQuery("");
   };
 
+  const { toast } = useToast();
+  const { t } = useI18n();
+
   // Add Ping Device Handler
   const handleAddDevice = async (data: {
     site_code: string;
@@ -145,37 +149,62 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
     device_type?: Device["device_type"];
     custom_notes?: string;
   }) => {
-    await addPingDevice(data);
-    await qc.invalidateQueries({ queryKey: ["devices"] });
-    await qc.invalidateQueries({ queryKey: ["sites"] });
+    try {
+      await addPingDevice(data);
+      await qc.invalidateQueries({ queryKey: ["devices"] });
+      await qc.invalidateQueries({ queryKey: ["sites"] });
+      toast.success(`${t("toastDeviceAdded")}: ${data.ip}`);
+    } catch (err: any) {
+      toast.error(err?.message || t("addIpError"));
+      throw err;
+    }
   };
 
   // Delete Ping Device Handler with Optimistic UI Update
   const handleDeleteDevice = async (dev: Device) => {
-    qc.setQueriesData<Device[]>({ queryKey: ["devices"] }, (old) => {
-      if (!old) return old;
-      return old.filter(d => (dev._id ? d._id !== dev._id : d.ip !== dev.ip));
-    });
-    await deletePingDevice(dev._id || dev.ip, dev.ip, dev.site_code);
-    await qc.invalidateQueries({ queryKey: ["devices"] });
-    await qc.invalidateQueries({ queryKey: ["sites"] });
+    try {
+      qc.setQueriesData<Device[]>({ queryKey: ["devices"] }, (old) => {
+        if (!old) return old;
+        return old.filter(d => d.ip !== dev.ip && (!dev._id || d._id !== dev._id));
+      });
+      await deletePingDevice(dev._id || dev.ip, dev.ip, dev.site_code);
+      await qc.invalidateQueries({ queryKey: ["devices"] });
+      await qc.invalidateQueries({ queryKey: ["sites"] });
+      toast.success(`${t("toastDeviceDeleted")}: ${dev.ip}`);
+    } catch (err: any) {
+      toast.error(t("toastDeleteFailed"));
+      await qc.invalidateQueries({ queryKey: ["devices"] });
+      await qc.invalidateQueries({ queryKey: ["sites"] });
+    }
   };
 
   // Clear All Alerts Handler
   const handleClearAlerts = async () => {
-    qc.setQueriesData({ queryKey: ["alerts"] }, []);
-    await clearAllAlerts();
-    await qc.invalidateQueries({ queryKey: ["alerts"] });
+    try {
+      qc.setQueriesData({ queryKey: ["alerts"] }, []);
+      await clearAllAlerts();
+      await qc.invalidateQueries({ queryKey: ["alerts"] });
+      toast.success(t("toastAllAlertsCleared"));
+    } catch (err: any) {
+      toast.error(t("toastDeleteFailed"));
+      await qc.invalidateQueries({ queryKey: ["alerts"] });
+    }
   };
 
   // Delete Single Alert Handler
   const handleDeleteAlert = async (alertId: string) => {
-    qc.setQueriesData<any[]>({ queryKey: ["alerts"] }, (old) => {
-      if (!old) return old;
-      return old.filter(a => a._id !== alertId);
-    });
-    await deleteAlert(alertId);
-    await qc.invalidateQueries({ queryKey: ["alerts"] });
+    try {
+      qc.setQueriesData<any[]>({ queryKey: ["alerts"] }, (old) => {
+        if (!old) return old;
+        return old.filter(a => a._id !== alertId && a.id !== alertId);
+      });
+      await deleteAlert(alertId);
+      await qc.invalidateQueries({ queryKey: ["alerts"] });
+      toast.success(t("toastAlertDeleted"));
+    } catch (err: any) {
+      toast.error(t("toastDeleteFailed"));
+      await qc.invalidateQueries({ queryKey: ["alerts"] });
+    }
   };
 
   const currentSelectedSite = sites.find(s => s.site_code === selectedSite);
@@ -307,6 +336,7 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
       <DeviceDetailSheet
         device={selectedDevice}
         onClose={() => setSelectedDevice(null)}
+        onDeleteDevice={handleDeleteDevice}
       />
 
       {/* Slide-over Alerts Drawer */}
@@ -314,6 +344,8 @@ function AuthenticatedApp({ userSession, setUserSession, onLogout }: Authenticat
         isOpen={isAlertsDrawerOpen}
         onClose={() => setIsAlertsDrawerOpen(false)}
         alerts={alerts}
+        onClearAlerts={handleClearAlerts}
+        onDeleteAlert={handleDeleteAlert}
       />
 
       {/* Add Ping Modal */}

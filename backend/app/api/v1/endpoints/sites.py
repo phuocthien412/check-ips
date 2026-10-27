@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, HTTPException, status
 from app.core.database import get_database, INITIAL_SITES
@@ -29,7 +30,10 @@ async def list_sites():
     results = []
     async for doc in sites_cursor:
         doc["_id"] = str(doc["_id"])
-        results.append(SiteResponse(**doc))
+        for dt_field in ["last_heartbeat", "created_at"]:
+            if doc.get(dt_field) and isinstance(doc[dt_field], datetime) and doc[dt_field].tzinfo is None:
+                doc[dt_field] = doc[dt_field].replace(tzinfo=timezone.utc)
+        results.append(SiteResponse.model_validate(doc))
     return results
 
 @router.get("/{site_code}", response_model=SiteResponse)
@@ -39,7 +43,10 @@ async def get_site(site_code: str):
         raise HTTPException(status_code=503, detail="Database not connected")
 
     doc = await db.sites.find_one({"site_code": site_code})
-    if not doc:
+    if doc is None:
         raise HTTPException(status_code=404, detail="Site not found")
     doc["_id"] = str(doc["_id"])
-    return SiteResponse(**doc)
+    for dt_field in ["last_heartbeat", "created_at"]:
+        if doc.get(dt_field) and isinstance(doc[dt_field], datetime) and doc[dt_field].tzinfo is None:
+            doc[dt_field] = doc[dt_field].replace(tzinfo=timezone.utc)
+    return SiteResponse.model_validate(doc)

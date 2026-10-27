@@ -42,8 +42,13 @@ async def list_devices(
     cursor = db.devices.find(filter_query).sort([("status", 1), ("ip", 1)]).skip(skip).limit(limit)
     devices = []
     async for doc in cursor:
+        if not doc:
+            continue
         doc["_id"] = str(doc["_id"])
-        devices.append(DeviceResponse(**doc))
+        for dt_field in ["first_discovered", "last_seen"]:
+            if doc.get(dt_field) and isinstance(doc[dt_field], datetime) and doc[dt_field].tzinfo is None:
+                doc[dt_field] = doc[dt_field].replace(tzinfo=timezone.utc)
+        devices.append(DeviceResponse.model_validate(doc))
     return devices
 
 @router.post("/", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
@@ -77,7 +82,12 @@ async def add_device(data: DeviceCreate):
     )
 
     created = await db.devices.find_one({"site_code": data.site_code, "ip": data.ip.strip()})
+    if created is None:
+        raise HTTPException(status_code=500, detail="Failed to retrieve created device")
     created["_id"] = str(created["_id"])
+    for dt_field in ["first_discovered", "last_seen"]:
+        if created.get(dt_field) and isinstance(created[dt_field], datetime) and created[dt_field].tzinfo is None:
+            created[dt_field] = created[dt_field].replace(tzinfo=timezone.utc)
 
     # Update site stats
     total = await db.devices.count_documents({"site_code": data.site_code})
@@ -90,7 +100,7 @@ async def add_device(data: DeviceCreate):
     )
 
     await manager.broadcast("DEVICE_ADDED", {"site_code": data.site_code, "ip": data.ip})
-    return DeviceResponse(**created)
+    return DeviceResponse.model_validate(created)
 
 @router.delete("/{device_id}")
 async def delete_device(device_id: str, site_code: Optional[str] = Query(None)):
@@ -99,18 +109,21 @@ async def delete_device(device_id: str, site_code: Optional[str] = Query(None)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database not connected")
 
-    query = {}
-    try:
-        query = {"_id": ObjectId(device_id)}
-    except Exception:
-        query = {"ip": device_id}
+    target = None
+    if ObjectId.is_valid(device_id):
+        target = await db.devices.find_one({"_id": ObjectId(device_id)})
 
-    if site_code and site_code != "ALL" and "_id" not in query:
-        query["site_code"] = site_code
+    if not target and site_code and site_code != "ALL":
+        target = await db.devices.find_one({"ip": device_id, "site_code": site_code})
 
-    target = await db.devices.find_one(query)
     if not target:
-        raise HTTPException(status_code=404, detail="Device not found")
+        target = await db.devices.find_one({"ip": device_id})
+
+    if not target:
+        target = await db.devices.find_one({"_id": device_id})
+
+    if not target:
+        return {"status": "success", "message": f"Device {device_id} already deleted"}
 
     target_site = target.get("site_code")
     await db.devices.delete_one({"_id": target["_id"]})
@@ -141,7 +154,10 @@ async def get_device(device_id: str):
     except Exception:
         doc = await db.devices.find_one({"ip": device_id})
 
-    if not doc:
+    if doc is None:
         raise HTTPException(status_code=404, detail="Device not found")
     doc["_id"] = str(doc["_id"])
-    return DeviceResponse(**doc)
+    for dt_field in ["first_discovered", "last_seen"]:
+        if doc.get(dt_field) and isinstance(doc[dt_field], datetime) and doc[dt_field].tzinfo is None:
+            doc[dt_field] = doc[dt_field].replace(tzinfo=timezone.utc)
+    return DeviceResponse.model_validate(doc)

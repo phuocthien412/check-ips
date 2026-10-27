@@ -25,8 +25,10 @@ async def list_alerts(
     cursor = db.alerts.find(filter_query).sort("created_at", -1).limit(limit)
     alerts = []
     async for doc in cursor:
+        if not doc:
+            continue
         doc["_id"] = str(doc["_id"])
-        alerts.append(AlertResponse(**doc))
+        alerts.append(AlertResponse.model_validate(doc))
     return alerts
 
 @router.delete("/")
@@ -51,11 +53,16 @@ async def delete_single_alert(alert_id: str):
         raise HTTPException(status_code=503, detail="Database not connected")
 
     try:
-        oid = ObjectId(alert_id)
-        result = await db.alerts.delete_one({"_id": oid})
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Alert not found")
-        return {"status": "success", "alert_id": alert_id}
+        deleted = False
+        if ObjectId.is_valid(alert_id):
+            result = await db.alerts.delete_one({"_id": ObjectId(alert_id)})
+            if result.deleted_count > 0:
+                deleted = True
+        if not deleted:
+            result = await db.alerts.delete_one({"$or": [{"_id": alert_id}, {"id": alert_id}]})
+            if result.deleted_count > 0:
+                deleted = True
+        return {"status": "success", "alert_id": alert_id, "deleted": deleted}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

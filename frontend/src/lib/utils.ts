@@ -69,13 +69,28 @@ export function getEffectiveDeviceStatus(
 }
 
 /**
+ * Safely parse ISO date strings from MongoDB. If UTC datetime string lacks 'Z' or offset, append 'Z'.
+ */
+export function parseUtcDate(dateStr?: string | Date | null): Date | null {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+  let s = String(dateStr).trim();
+  if (!s) return null;
+  // If string contains ISO format without trailing Z or +/- offset, treat as UTC
+  if (!s.endsWith("Z") && !s.includes("+") && !/[-+]\d{2}(:\d{2})?$/.test(s)) {
+    s += "Z";
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
  * Format timestamp strictly in Vietnam Timezone (Asia/Ho_Chi_Minh - UTC+7)
  */
 export function formatVietnamDateTime(dateStr?: string | Date | null): string {
-  if (!dateStr) return "—";
+  const d = parseUtcDate(dateStr);
+  if (!d) return "—";
   try {
-    const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
-    if (isNaN(d.getTime())) return "—";
     return new Intl.DateTimeFormat("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       year: "numeric",
@@ -92,10 +107,9 @@ export function formatVietnamDateTime(dateStr?: string | Date | null): string {
 }
 
 export function formatVietnamTime(dateStr?: string | Date | null): string {
-  if (!dateStr) return "—";
+  const d = parseUtcDate(dateStr);
+  if (!d) return "—";
   try {
-    const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
-    if (isNaN(d.getTime())) return "—";
     return new Intl.DateTimeFormat("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       hour: "2-digit",
@@ -112,10 +126,9 @@ export function formatRelativeVietnamTime(
   dateStr?: string | Date | null,
   t?: (k: any) => string
 ): string {
-  if (!dateStr) return "—";
+  const d = parseUtcDate(dateStr);
+  if (!d) return "—";
   try {
-    const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
-    if (isNaN(d.getTime())) return "—";
     const diffMs = Math.max(0, Date.now() - d.getTime());
     const diffSec = Math.floor(diffMs / 1000);
     const diffMin = Math.floor(diffSec / 60);

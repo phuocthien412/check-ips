@@ -69,7 +69,6 @@ async def process_telemetry(payload: TelemetryPayload) -> TelemetryIngestRespons
                 "resolved_at": None
             })
 
-        # Upsert device in MongoDB
         update_doc = {
             "$set": {
                 "site_code": site_code,
@@ -80,7 +79,6 @@ async def process_telemetry(payload: TelemetryPayload) -> TelemetryIngestRespons
             },
             "$setOnInsert": {
                 "first_discovered": now,
-                "last_seen": now
             }
         }
         if is_responsive:
